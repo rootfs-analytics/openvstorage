@@ -16,13 +16,11 @@
             exports: 'jQuery'
         }
     },
-    urlArgs: "bust=" + (new Date()).getTime()
+    urlArgs: "bust=0.1b"
 });
 
 define(['durandal/system', 'durandal/app', 'durandal/viewLocator'],  function (system, app, viewLocator) {
     "use strict";
-    system.debug(true);
-
     app.title = 'Open vStorage';
     app.configurePlugins({
         router: true,
@@ -31,6 +29,6 @@ define(['durandal/system', 'durandal/app', 'durandal/viewLocator'],  function (s
     });
     app.start().then(function () {
         viewLocator.useConvention();
-        app.setRoot('viewmodels/shell', 'entrance');
+        app.setRoot('viewmodels/shell');
     });
 });

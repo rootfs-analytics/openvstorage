@@ -1,4 +1,4 @@
-define(['jquery', 'knockout', 'ovs/generic'], function ($, ko, generic) {
+define(['jquery', 'knockout', 'ovs/generic', 'ovs/authentication'], function ($, ko, generic, authentication) {
     "use strict";
 
     return function () {
@@ -26,7 +26,10 @@ define(['jquery', 'knockout', 'ovs/generic'], function ($, ko, generic) {
             }
             self.refresh_handle = $.ajax('/api/internal/statistics/memcache/?timestamp=' + generic.gettimestamp(), {
                 type: 'get',
-                contentType: 'application/json'
+                contentType: 'application/json',
+                headers: {
+                    'Authorization': authentication.header()
+                }
             })
             .done(function (data) {
                 self.bytes(generic.get_bytes_human(data.bytes));

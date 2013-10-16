@@ -1,6 +1,5 @@
 define(function() {
     "use strict";
-
     function gettimestamp() {
         return new Date().getTime();
     }

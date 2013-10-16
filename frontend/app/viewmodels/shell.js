@@ -1,13 +1,15 @@
-﻿define(['plugins/router', 'durandal/app'], function (router, app) {
+﻿define(['plugins/router', 'durandal/app', 'ovs/shared'], function (router, app, shared) {
     "use strict";
+    router.map([
+               { route: '',              moduleId: 'viewmodels/redirect',   nav: false },
+               { route: ':mode*details', moduleId: 'viewmodels/index', nav: false }
+           ]).buildNavigationModel()
+          .mapUnknownRoutes('viewmodels/404')
+          .activate();
+
     return {
+        shared: shared,
         router: router,
-        activate: function () {
-            router.map([
-                { route: '', title: 'Dashboard', moduleId: 'viewmodels/dashboard', nav: true },
-                { route: 'statistics', title: 'Statistics', moduleId: 'viewmodels/statistics', nav: true }
-            ]).buildNavigationModel();
-            return router.activate();
-        }
+        activate: function () { }
     };
 });
