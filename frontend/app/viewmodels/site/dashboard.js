@@ -1,11 +1,17 @@
-﻿define(['ovs/shared', 'knockout', 'ovs/authentication'], function (shared, ko, authentication) {
+﻿define(['plugins/dialog', 'ovs/shared', 'knockout', '../wizards/clone/index'], function (dialog, shared, ko, CloneWizard) {
     "use strict";
-    return {
+    return function () {
+        var self = this;
+
         // System
-        shared: shared,
+        self.shared = shared;
 
         // Data
-        displayname: 'Welcome to Open vStorage',
-        description: 'Open vStorage is the next generation storage'
+        self.displayname = ko.observable('Welcome to Open vStorage');
+        self.description = ko.observable('Open vStorage is the next generation storage');
+
+        self.wizard = function () {
+            return dialog.show(new CloneWizard({modal: true}));
+        };
     };
 });

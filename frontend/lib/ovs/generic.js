@@ -33,7 +33,7 @@ define(function() {
         return '';
     }
     function tryget(object, key, fallback) {
-        if (object.hasOwnProperty(key)) {
+        if (object !== undefined && object.hasOwnProperty(key)) {
             return object[key];
         }
         return fallback;

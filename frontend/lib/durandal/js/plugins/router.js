@@ -849,12 +849,12 @@ define(['durandal/system', 'durandal/app', 'durandal/activator', 'durandal/event
      */
     rootRouter.targetIsThisWindow = function(event) {
         var targetWindow = $(event.target).attr('target');
-        
+
         if (!targetWindow ||
             targetWindow === window.name ||
             targetWindow === '_self' ||
             (targetWindow === 'top' && window === window.top)) { return true; }
-        
+
         return false;
     };
 
@@ -887,7 +887,7 @@ define(['durandal/system', 'durandal/app', 'durandal/activator', 'durandal/event
 
                         // Ensure the protocol is not part of URL, meaning its relative.
                         // Stop the event bubbling to ensure the link will not cause a page refresh.
-                        if (href && !(href.charAt(0) === "#" || /^[a-z]+:/i.test(href))) {
+                        if (href != null && !(href.charAt(0) === "#" || /^[a-z]+:/i.test(href))) {
                             rootRouter.explicitNavigation = true;
                             evt.preventDefault();
                             history.navigate(href);

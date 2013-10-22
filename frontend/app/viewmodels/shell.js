@@ -1,4 +1,4 @@
-﻿define(['plugins/router', 'durandal/app', 'ovs/shared'], function (router, app, shared) {
+﻿define(['plugins/router', 'durandal/app', 'ovs/shared', 'bootstrap'], function (router, app, shared) {
     "use strict";
     router.map([
                { route: '',              moduleId: 'viewmodels/redirect',   nav: false },
