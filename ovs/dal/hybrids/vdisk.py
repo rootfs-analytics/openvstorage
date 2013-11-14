@@ -16,7 +16,7 @@ class VDisk(DataObject):
     """
     _blueprint = {'name': (None, str),
                   'description': ('Test disk', str),
-                  'size': (100, int),
+                  'size': (100, float),
                   'type': ('DSSVOL', str),
                   'role': ('BOOT', str),  # BOOT, DATA, TEMP
                   'devicename': ('123456789-flat.vmdk', str),
@@ -93,6 +93,6 @@ class VDisk(DataObject):
             """
             Loads the actual data
             """
-            return _vsrClient.info(self.volumeid)
+            return None  # @TODO _vsrClient.info(self.volumeid)
 
         return self._backend_property(get_data)

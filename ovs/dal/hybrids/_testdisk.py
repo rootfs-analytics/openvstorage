@@ -12,7 +12,8 @@ class TestDisk(DataObject):
     """
     _blueprint = {'name': (None, str),
                   'description': (None, str),
-                  'size': (0, int)}
+                  'size': (0, float),
+                  'order': (0, int)}
     _relations = {'machine': (TestMachine, 'disks'),
                   'storage': (TestMachine, 'stored_disks')}
     _expiry = {'used_size': 5}

@@ -228,11 +228,26 @@ class DataObject(object):
         Setter for a simple property that will validate the type
         """
         self.dirty = True
-        if isinstance(value, self._blueprint[attribute][1]):
+        if value is None:
             self._data[attribute] = value
         else:
-            raise TypeError('Property %s should be of type %s'
-                            % (attribute, self._blueprint[attribute][1].__name__))
+            field_type = self._blueprint[attribute][1]
+            if field_type is str:
+                correct = isinstance(value, basestring)
+                allowed_types = [str, unicode, basestring]
+            elif field_type is float:
+                correct = isinstance(value, float) or isinstance(value, int)
+                allowed_types = [float, int]
+            else:
+                correct = isinstance(value, field_type)
+                allowed_types = [field_type]
+
+            if correct:
+                self._data[attribute] = value
+            else:
+                allowed_types = [t.__name__ for t in allowed_types]
+                raise TypeError('Property %s allows types %s. %s given'
+                                % (attribute, str(allowed_types), type(value)))
 
     def _set_cproperty(self, attribute, value):
         """

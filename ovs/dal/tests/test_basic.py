@@ -232,6 +232,7 @@ class Basic(TestCase):
         """
         Validates the correctness of all hybrid objects:
         * They should contain all required properties
+        * Properties should have the correct type
         * All dynamic properties should be implemented
         """
         # Some stuff here to dynamically test all hybrid properties
@@ -241,13 +242,16 @@ class Basic(TestCase):
             if relation_info is not None:
                 for key in relation_info.keys():
                     remote_properties.append(key)
-                # Make sure certain attributes are correctly set
-            self.assertIsInstance(cls._blueprint, dict,
-                                  '_blueprint is a required property on %s' % cls.__name__)
-            self.assertIsInstance(cls._relations, dict,
-                                  '_relations is a required property on %s' % cls.__name__)
-            self.assertIsInstance(cls._expiry, dict,
-                                  '_expiry is a required property on %s' % cls.__name__)
+            # Make sure certain attributes are correctly set
+            self.assertIsInstance(cls._blueprint, dict, '_blueprint required: %s' % cls.__name__)
+            self.assertIsInstance(cls._relations, dict, '_relations required: %s' % cls.__name__)
+            self.assertIsInstance(cls._expiry, dict, '_expiry required: %s' % cls.__name__)
+            # Check blueprint types
+            allowed_types = [int, float, str, bool, list, dict]
+            for key in cls._blueprint:
+                self.assertIn(cls._blueprint[key][1], allowed_types,
+                              '_blueprint types in %s should be one of %s'
+                              % (cls.__name__, str(allowed_types)))
             instance = cls()
             # Make sure the type can be instantiated
             self.assertIsNotNone(instance.guid)
@@ -739,6 +743,20 @@ class Basic(TestCase):
         mutex.acquire()
         time.sleep(0.5)
         mutex.release()
+
+    def test_typesafety(self):
+        """
+        Validates typesafety checking on object properties
+        """
+        disk = TestDisk()
+        disk.name = 'test'
+        disk.name = u'test'
+        disk.size = 100
+        disk.size = 100.5
+        disk.order = 100
+        with self.assertRaises(TypeError):
+            disk.order = 100.5
+
 
 
 # Mocking classes
