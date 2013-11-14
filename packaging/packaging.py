@@ -104,7 +104,7 @@ def add_version_to_changelog(repopath, version, qualitylevel):
         changelog.new_block(
                 package='openvstorage',
                 version=currentversion,
-                distributions=qualitylevel,
+                distributions='ovs-{}'.format(qualitylevel),
                 urgency='low',
                 author=author,
                 date=cts)
@@ -125,7 +125,8 @@ def act_on_changelog(repopath, changelog_action, version, credentials):
         process_command(changelogcommand)
         push_bitbucket(credentials, repopath)
     elif changelog_action == 'revert':
-        changelogcommand = ['hg', '-yq', changelog_action, '-a', '.']
+        changelogpath = os.path.join(repopath, 'debian', 'changelog')
+        changelogcommand = ['hg', '-yq', changelog_action, '-a', changelogpath]
         process_command(changelogcommand, cwd=repopath)
     else:
         return 1
@@ -198,14 +199,14 @@ def build_dsc(repopath, qualitylevel, tag, credentials=None):
     versionnumber = _gather_version(repopath)
     changelog_action = None
     if qualitylevel == 'development':
-        version = "{}~{}~{}".format(versionnumber, scripttime, tag)
+        version = '{}~{}~{}'.format(versionnumber, scripttime, tag)
         add_version_to_changelog(repopath, version, qualitylevel)
         # changelog_action = 'revert'
     elif tag and qualitylevel == 'release': 
         patchnumber = versionnumber.split('.')[2]
         versionnumber.split('.')[2] = int(patchnumber) + 1
         newversion = '.'.join(versionnumber)
-        version = "{}~{}".format(newversion, tag)
+        version = '{}~{}'.format(newversion, tag)
         add_version_to_changelog(repopath, version, qualitylevel, credentials)
         changelog_action = 'commit'
     else:
@@ -226,7 +227,7 @@ def build_dsc(repopath, qualitylevel, tag, credentials=None):
             packages.append(filename)
 
     for package in packages:
-        print "packaging {} with version {}".format(package, version)
+        print 'packaging {} with version {}'.format(package, version)
         compile_changelog(repopath, package, version, qualitylevel)
     
     exclude_patterns = ['.hg', '.project', '.settings', '.hgignore']
@@ -246,11 +247,11 @@ def build_dsc(repopath, qualitylevel, tag, credentials=None):
     srcdebdir = os.path.split(repopath)[0]
     for srcdeb in os.listdir(srcdebdir):
         print 'found {} looking for {} in {}'.format(srcdeb, version, srcdebdir)
-        if srcdeb.endswith("{}.dsc".format(version)):
+        if srcdeb.endswith('{}.dsc'.format(version)):
             srcdebpath = os.path.join(srcdebdir, srcdeb)
 
     if not srcdebpath:
-        raise RuntimeError("Source Debian Package Failure - Source Deb Not Found")
+        raise RuntimeError('Source Debian Package Failure - Source Deb Not Found')
 
     return srcdebpath
 
@@ -309,20 +310,34 @@ def update_repository(repository, credentials, branch):
     else:
         clone_bitbucket(credentials, repository, repodir, branch)
 
-def upload(changesfile, url, credentials):
+def upload(changesfile, credentials):
     """
-    uploads deb to url using credentials
-    openvstorage_0.1.0-2_amd64.changes
+    uploads deb to apt server using dput
+    - assumes a correct working dput.cf
+    - dput.cf to be created at a later date
     credentials: user:pass or path to private key
     """
 
+    # TODO: copy sshconfig, write a new one, and move the old one back after success
     def _writesshconfig(addconfig):
-        sshconfig = '~/.ssh/config'
-        configf = open(sshconfig, 'r+')
-        configf.write(addconfig)
+        easykeylist = ['UserKnownHostsFile /dev/null\n', 'StrictHostKeyChecking no\n']
+        sshconfig = os.path.expanduser('~/.ssh/config')
+        if not os.path.exists(sshconfig):
+            configf = open(sshconfig, 'w+')
+        else:
+            configf = open(sshconfig, 'r+')
+        configlines = configf.readlines()
+        for easykey in easykeylist:
+            if easykey not in configlines:
+                configf.write(easykey)
+        if addconfig not in configlines:
+            configf.write(addconfig)
         configf.close()
 
+
     dputcommand = ['dput', '-u', 'ovs', changesfile]
+
+    print 'dput command:\n{}'.format(dputcommand)
 
     if os.path.exists(credentials):
         _writesshconfig('IdentityFile {}'.format(credentials))
@@ -331,7 +346,7 @@ def upload(changesfile, url, credentials):
         splitcreds = credentials.split(':')
         username = splitcreds[0]
         password = ''.join(splitcreds[1:])
-        _writesshconfig('-o User={}'.format(username))
+        _writesshconfig('User {}\n'.format(username))
         import pexpect
         pexpect.run(' '.join(dputcommand), events={'(?i)password:': '{}\n'.format(password)})
 
@@ -360,13 +375,14 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--repopath', dest='repopath', required=True, help='Path to OpenvStorage Repository')
     parser.add_argument('-q', '--qualitylevel', dest='qualitylevel', required=True, help='OpenvStorage Quality level')
     parser.add_argument('-t', '--tag', dest='tag', help='Tag For Development or Prerelease Builds')
-    # increment patch number only upon pre-release (quality release with tag)
+    parser.add_argument('-s', '--sshcredentials', dest='ssh_credentials', required=True, help='apt repository upload user:password or path to ssh private key')
 
     parser.add_argument('-b', '--branch', dest='branch', help='Repository Branch')
     parser.add_argument('-c', '--bbcredentials', dest='bb_credentials', help='bitbucket user:password or path to ssh private key')
     parser.add_argument('-p', '--promote', dest='promote', help='Indicate Change in Release Tag but not Increment Patch Version')
-    parser.add_argument('-u', '--url', dest='url', help='destination upload apt repository ftp:// or scp://')
-    parser.add_argument('-s', '--sshcredentials', dest='ssh_credentials', help='apt repository upload user:password or path to ssh private key')
+    # instead of passing url, create a dput.cf file
+    # maybe can create from a url.. maybe need it out of this script
+    # parser.add_argument('-u', '--url', dest='url', help='destination upload apt repository ftp:// or scp://')
 
     parser.add_argument('-n', '--non-interactive', dest='noninteractive', action='store_true', help='Non-interactive mode')
     parser.add_argument('-d', '--debug', dest='debug', action='store_true', help='Debug mode')
@@ -382,10 +398,10 @@ if __name__ == '__main__':
         incrementversion = True
 
     if (args.branch or incrementversion):
-        if args.bbcredentials:
-            credentials = args.bbcredentials
+        if args.bb_credentials:
+            credentials = args.bb_credentials
         else:
-            raise AttributeError("Bitbucket credentials necessary")
+            raise AttributeError('Bitbucket credentials necessary')
 
     if args.branch:
         update_repository(repopath, args.branch, credentials)
@@ -396,4 +412,5 @@ if __name__ == '__main__':
         dscpath = build_dsc(repopath, quality, tag)
 
     build_deb(dscpath)
-    # upload(changesfile, url, credentials)
+    changesfile = '{}_amd64.changes'.format(dscpath[:-4])
+    upload(changesfile, args.ssh_credentials)
