@@ -15,10 +15,10 @@ module.exports = function(config) {
             'tests/coverage/**/*.js'
         ],
         preprocessors: {
-            'lib/ovs/*.js'       : ['coverage'],
-            'app/viewmodels/*.js': ['coverage'],
-            'app/widgets/**/*.js': ['coverage'],
-            'tests/**/*.js'      : ['coverage']
+            '**/lib/ovs/*.js'       : ['coverage'],
+            '**/app/viewmodels/*.js': ['coverage'],
+            '**/app/widgets/**/*.js': ['coverage'],
+            '**/tests/**/*.js'      : ['coverage']
         },
         reporters: ['progress', 'coverage', 'junit'],
         port: 9876,
