@@ -27,7 +27,33 @@ def _check_output(*popenargs, **kwargs):
     output = subprocess.check_output(*popenargs, **kwargs)
     return output
 
-def _gather_version(repopath):
+def _increment_version(versionnumber, increment):
+    """
+    Increments a <major>.<minor>.<patch> version number as desired
+    """
+    versionlist = versionnumber.split('.')
+    major = versionlist[0]
+    minor = versionlist[1]
+    patchandbuild = versionlist[2]
+    patch = patchandbuild.split('-')[0]
+    newversion = versionnumber
+
+    if increment == 'major':
+        newversion = "{}.{}.{}".format(int(major) + 1, minor, patch)
+    elif increment == 'minor':
+        newversion = "{}.{}.{}".format(major, int(minor) + 1, patch)
+    elif increment == 'patch':
+        newversion = "{}.{}.{}".format(major, minor, int(patch) + 1)
+
+    try:
+        build = patchandbuild.split('-')[1]
+        newversion = "{}-{}".format(newversion, build)
+    except IndexError:
+        newversion = newversion
+
+    return newversion
+
+def _gather_version(repopath, incrementversion):
     """
     extracts version from repository changelog
     returns incremented part of version if indicated or just version
@@ -38,8 +64,13 @@ def _gather_version(repopath):
     changelogfilehandler = open(changelogfile, 'r') 
 
     changelog.parse_changelog(changelogfilehandler)
-    currentversion = changelog.full_version
-    return currentversion.split('~')[0]
+    currentversion = changelog.full_version.split('~')[0]
+    if incrementversion:
+        version = _increment_version(currentversion, 'patch')
+    else:
+        version = currentversion
+
+    return version
 
 def process_command(args, cwd=None):
     if not isinstance(args, (list, tuple)):
@@ -67,10 +98,10 @@ def clone_bitbucket(credentials, repository, repodir, branch):
 
     if os.path.exists(credentials):
         sshcommand = 'ssh -i {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'.format(credentials)
-        sshurl = 'ssh://hg@bitbucket.org/cloudfounders/{}'.format(repository)
+        sshurl = 'ssh://hg@bitbucket.org/openvstorage/{}'.format(repository)
         clonecommand.extend(['-e', sshcommand, sshurl])
     else:
-        clonecommand.append('https://{}@bitbucket.org/cloudfounders/{}'.format(credentials, repository))
+        clonecommand.append('https://{}@bitbucket.org/openvstorage/{}'.format(credentials, repository))
 
     process_command(clonecommand)
 
@@ -82,10 +113,10 @@ def push_bitbucket(credentials, repopath):
     repository = os.path.split(repopath)[1]
     if os.path.exists(credentials):
         sshcommand = 'ssh -i {} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'.format(credentials)
-        sshurl = 'ssh://hg@bitbucket.org/cloudfounders/{}'.format(repository)
+        sshurl = 'ssh://hg@bitbucket.org/openvstorage/{}'.format(repository)
         pushcommand.extend(['-e', sshcommand, sshurl])
     else:
-        pushcommand.append('https://{}@bitbucket.org/cloudfounders/{}'.format(credentials, repository))
+        pushcommand.append('https://{}@bitbucket.org/openvstorage/{}'.format(credentials, repository))
 
     process_command(pushcommand)
 
@@ -187,7 +218,7 @@ def compile_changelog(codedir, package, version, qualitylevel):
     changelog.write_to_open_file(changelogfilehandler)
     changelogfilehandler.close()
 
-def build_dsc(repopath, qualitylevel, tag, credentials=None):
+def build_dsc(repopath, qualitylevel, tag, credentials=None, incrementversion=False):
     """
     create the source deb
     """
@@ -196,7 +227,7 @@ def build_dsc(repopath, qualitylevel, tag, credentials=None):
     if not os.path.exists(abscodedir):
         raise OSError('Code directory {} must exist to continue'.format(abscodedir))
 
-    versionnumber = _gather_version(repopath)
+    versionnumber = _gather_version(repopath, incrementversion)
     changelog_action = None
     if qualitylevel == 'development':
         version = '{}~{}~{}'.format(versionnumber, scripttime, tag)
@@ -246,13 +277,14 @@ def build_dsc(repopath, qualitylevel, tag, credentials=None):
 
     srcdebdir = os.path.split(repopath)[0]
     for srcdeb in os.listdir(srcdebdir):
-        print 'found {} looking for {} in {}'.format(srcdeb, version, srcdebdir)
+        print 'found {} looking for file ending with "{}.dsc" in {}'.format(srcdeb, version, srcdebdir)
         if srcdeb.endswith('{}.dsc'.format(version)):
             srcdebpath = os.path.join(srcdebdir, srcdeb)
 
     if not srcdebpath:
         raise RuntimeError('Source Debian Package Failure - Source Deb Not Found')
 
+    print 'source deb file path: {}'.format(srcdebpath)
     return srcdebpath
 
 def list_dsc():
@@ -270,9 +302,9 @@ def dpkg_buildpackage(tmpdir, package, cwd=None):
     """
     os.chdir(tmpdir)
     if package:
-        args = ['/usr/bin/dpkg-buildpackage','-rfakeroot','-uc','-us','-b','-T', package]
+        args = ['/usr/bin/dpkg-buildpackage', '-rfakeroot', '-uc', '-us', '-b', '-T', package]
     else:
-        args = ['/usr/bin/dpkg-buildpackage','-rfakeroot','-uc', '-us']
+        args = ['/usr/bin/dpkg-buildpackage', '-rfakeroot', '-uc', '-us']
     process_command(args)
     if cwd:
         os.chdir(cwd)
@@ -283,7 +315,7 @@ def build_deb(sourcedebpath, package=None):
     """
     packagetmp = sourcedebpath.split('_')[0]
     if not os.path.exists(sourcedebpath):
-        raise ValueError('Source package %s not found'%sourcedebpath)
+        raise ValueError('Source package {} not found'.format(sourcedebpath))
     tmpdir = os.path.join(tempfile.gettempdir(), '{}_{}'.format(packagetmp, scripttime))
     os.chdir(sourcedir)
     dpkg_source('-x', sourcedebpath, output=tmpdir)
@@ -373,7 +405,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='OpenvStorage Packager')
     parser.add_argument('-r', '--repopath', dest='repopath', required=True, help='Path to OpenvStorage Repository')
-    parser.add_argument('-q', '--qualitylevel', dest='qualitylevel', required=True, help='OpenvStorage Quality level')
+    parser.add_argument('-q', '--qualitylevel', dest='qualitylevel', required=True, help='OpenvStorage Quality level: (release | revision | development)')
     parser.add_argument('-t', '--tag', dest='tag', help='Tag For Development or Prerelease Builds')
     parser.add_argument('-s', '--sshcredentials', dest='ssh_credentials', required=True, help='apt repository upload user:password or path to ssh private key')
 
@@ -394,7 +426,7 @@ if __name__ == '__main__':
     tag = args.tag
 
     incrementversion = False
-    if args.tag and args.qualitylevel == 'release':
+    if (args.tag and args.qualitylevel == 'release') or args.qualitylevel == 'development':
         incrementversion = True
 
     if (args.branch or incrementversion):
@@ -407,7 +439,7 @@ if __name__ == '__main__':
         update_repository(repopath, args.branch, credentials)
 
     if incrementversion:
-        dscpath = build_dsc(repopath, quality, tag, credentials)
+        dscpath = build_dsc(repopath, quality, tag, credentials, incrementversion)
     else:
         dscpath = build_dsc(repopath, quality, tag)
 

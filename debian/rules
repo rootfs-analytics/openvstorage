@@ -23,7 +23,6 @@ openvstorage-core:
 	dh_gencontrol  -p$@
 	dh_md5sums  -p$@
 	dh_builddeb  -p$@
-	dh_clean -p$@
 
 openvstorage-webapps: 
 	dh_testdir
@@ -41,7 +40,6 @@ openvstorage-webapps:
 	dh_gencontrol  -p$@
 	dh_md5sums  -p$@
 	dh_builddeb  -p$@
-	dh_clean -p$@
 
 openvstorage: 
 	dh_testdir
