@@ -15,8 +15,8 @@ class VMachine(DataObject):
     _blueprint = {'name':         (None,  str,  'Name of the virtual machine'),
                   'description':  (None,  str,  'Description of the virtual machine'),
                   'hypervisorid': (None,  str,  'Identifier of the VMachine on the hypervisor'),
-                  'is_template':  (True,  bool, 'Indicates whether this virtual machine is a template'),
-                  'is_vsa':       (False, bool, 'Indicates whether this virtual machine represents a VSA'),
+                  'is_vtemplate': (True,  bool, 'Indicates whether this virtual machine is a template'),
+                  'is_internal':  (False, bool, 'Indicates whether this virtual machine represents an internal machine'),
                   'hvtype':       (None,  ['HYPERV', 'VMWARE', 'XEN'], 'Hypervisor type serving the VMachine')}
     _relations = {}
     _expiry = {'snapshots':               (60, list),
