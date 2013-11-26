@@ -4,7 +4,7 @@ Wrapper class for the storagerouterclient of the voldrv team
 """
 
 from volumedriver.storagerouter import storagerouterclient
-from ConfigParser import ConfigParser
+from configobj import ConfigObj
 
 
 class VolumeStorageRouterClient(object):
@@ -15,13 +15,12 @@ class VolumeStorageRouterClient(object):
         """
         Initializes the wrapper given a configfile for the RPC communication
         """
-        config = ConfigParser()
-        config.read('/opt/OpenvStorage/ovs/config/volumestoragerouter.cfg')
-        self._host = config.defaults()['host']
-        self._port = int(config.defaults()['port'])
+        config = ConfigObj('/opt/OpenvStorage/config/volumestoragerouterclient.cfg')
+        self._host = config['local']['host']
+        self._port = int(config['local']['port'])
 
     def load(self):
         """
         Loads and returns the client
         """
-        return storagerouterclient.StorageRouterClient(xmlrpchost=self._host, xmlrpcport=self._port)
+        return storagerouterclient.StorageRouterClient(self._host, self._port)

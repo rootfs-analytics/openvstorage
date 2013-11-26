@@ -23,7 +23,7 @@ class VDiskController(object):
         """
         List all known volumes
         """
-        response = vsrClient.listVolumes()
+        response = vsrClient.list_volumes()
         return response
 
     @staticmethod
@@ -56,9 +56,9 @@ class VDiskController(object):
         """
         name = name if name else devicename
         description = '{0} {1}'.format(location, name)
-        volumeid = vsrClient.create(targetPath='{0}/{1}'.format(location, devicename),
-                                    volumeSize='%sMiB' % size,
-                                    scoMultiplier=1024)
+        volumeid = vsrClient.create_volume(targetPath='{0}/{1}'.format(location, devicename),
+                                           volumeSize='%sMiB' % size,
+                                           scoMultiplier=1024)
         disk = VDisk()
         disk.name = name
         disk.description = description
@@ -101,8 +101,8 @@ class VDiskController(object):
         new_disk = VDisk()
         disk = VDisk(diskguid)
         logging.info('Clone snapshot %s of disk %s' % (snapshotid, disk.name))
-        volumeid = vsrClient.clone('{0}/{1}'.format(location, '%s-flat.vmdk' % devicename),
-                                   disk.volumeid, snapshotid)
+        volumeid = vsrClient.create_clone('{0}/{1}'.format(location, '%s-flat.vmdk' % devicename),
+                                          disk.volumeid, snapshotid)
         for item in properties_to_clone:
             setattr(new_disk, item, getattr(disk, item))
         disk.children.append(new_disk.guid)
@@ -129,7 +129,7 @@ class VDiskController(object):
         logging.info('Create snapshot for disk %s' % disk.name)
         #if not srClient.canTakeSnapshot(diskguid):
         #    raise ValueError('Volume %s not found'%diskguid)
-        snapshotguid = vsrClient.snapShotCreate(disk.volumeid)
+        snapshotguid = vsrClient.create_snapshot(disk.volumeid)
         kwargs['result'] = snapshotguid
         return kwargs
 

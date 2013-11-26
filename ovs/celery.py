@@ -12,10 +12,8 @@ from celery.schedules import crontab
 from ovs.logging.logHandler import LogHandler
 
 celery = Celery('ovs',
-                include=['ovs.lib.dummy',
-                         'ovs.lib.vdisk',
+                include=['ovs.lib.vdisk',
                          'ovs.lib.vmachine',
-                         'ovs.lib.user',
                          'ovs.lib.messaging',
                          'ovs.lib.scheduledtask',
                          'ovs.hypervisor.hypervisors.vmware'])

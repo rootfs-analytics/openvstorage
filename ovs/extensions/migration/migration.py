@@ -31,7 +31,7 @@ class Migration(object):
             print 'Migrated %s.%s from %s to %s' % (function.__module__, function.__name__, start, end)
             return end
 
-        filename = '/opt/OpenvStorage/config/version.cfg'
+        filename = '/opt/OpenvStorage/config/main.cfg'
         parser = ConfigParser.RawConfigParser()
         parser.read(filename)
 

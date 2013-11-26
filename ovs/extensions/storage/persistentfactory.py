@@ -25,13 +25,17 @@ class PersistentFactory(object):
             PersistentFactory.store = None
             if client_type == 'arakoon':
                 from ovs.extensions.storage.persistent.arakoonstore import ArakoonStore
-                parser.read('/opt/OpenvStorage/config/arakoon.cfg')
-                cluster = parser.get('main', 'cluster')
-                node = parser.get('main', 'local_node')
-                name = parser.get(node, 'name')
-                ip = parser.get(node, 'ip')
-                port = int(parser.get(node, 'port'))
-                PersistentFactory.store = ArakoonStore(cluster, {name: ([ip], port)})
+                parser.read('/opt/OpenvStorage/config/arakoon/ovsdb/ovsdb_client.cfg')
+                cluster = parser.get('global', 'cluster_id')
+                clusterNodes = parser.get('global', 'cluster')
+                node_dict = {}
+                for node in clusterNodes.split(",") :
+                    node = node.strip()
+                    ip  = parser.get(node, "ip")
+                    port = parser.get(node, "client_port")
+                    ip_port = ([ip,], port)
+                    node_dict.update({node: ip_port})
+                PersistentFactory.store = ArakoonStore(cluster, node_dict)
             if client_type == 'default':
                 from ovs.extensions.storage.persistent.dummystore import DummyPersistentStore
                 PersistentFactory.store = DummyPersistentStore()

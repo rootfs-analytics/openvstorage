@@ -25,7 +25,7 @@ class VolatileFactory(object):
             VolatileFactory.store = None
             if client_type == 'memcache':
                 from ovs.extensions.storage.volatile.memcachestore import MemcacheStore
-                parser.read('/opt/OpenvStorage/config/memcache.cfg')
+                parser.read('/opt/OpenvStorage/config/memcacheclient.cfg')
                 node = parser.get('main', 'local_node')
                 location = parser.get(node, 'location')
                 VolatileFactory.store = MemcacheStore([location])

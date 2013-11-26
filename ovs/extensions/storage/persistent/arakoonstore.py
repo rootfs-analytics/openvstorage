@@ -5,8 +5,8 @@ Arakoon store module
 
 import json
 
-from arakoon import Arakoon
-from arakoon.ArakoonExceptions import ArakoonNotFound
+from ovs.extensions.db.arakoon import Arakoon
+from ovs.extensions.db.arakoon.ArakoonExceptions import ArakoonNotFound
 from ovs.extensions.storage.exceptions import KeyNotFoundException
 
 

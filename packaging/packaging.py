@@ -109,6 +109,7 @@ class OvsPackaging(object):
             self.packagetimestring = '{} +0000'.format(_packagetime.strftime('%a, %d %b %Y %H:%M:%S'))
 
         self.incrementversion = False
+        self.update = True
         self.changelog_action = None
         if (self.tag and self.distribution == 'release'):
             self.incrementversion = True
@@ -120,6 +121,7 @@ class OvsPackaging(object):
             # is good here
             # changelog_action = 'revert'
             self.incrementversion = True
+            self.update = False
 
     @staticmethod
     def _call(*popenargs, **kwargs):
@@ -538,7 +540,8 @@ class OvsPackaging(object):
 
         self.check_directories()
 
-        self.update_repository()
+        if self.update:
+            self.update_repository()
         self.config_ssh()
 
         version = self._changelog_version()
