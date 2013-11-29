@@ -18,6 +18,8 @@ define([
         // Data
         self.vMachineHeaders = [
             { key: 'name',       value: $.t('ovs:generic.name'),       width: 150,       colspan: undefined },
+            { key: 'vpool',      value: $.t('ovs:generic.vpool'),      width: 150,       colspan: undefined },
+            { key: 'vsa',        value: $.t('ovs:generic.vsa'),        width: 150,       colspan: undefined },
             { key: undefined,    value: $.t('ovs:generic.vdisks'),     width: 60,        colspan: undefined },
             { key: 'storedData', value: $.t('ovs:generic.storeddata'), width: 110,       colspan: undefined },
             { key: 'cacheRatio', value: $.t('ovs:generic.cache'),      width: 100,       colspan: undefined },

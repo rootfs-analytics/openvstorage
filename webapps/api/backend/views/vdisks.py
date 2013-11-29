@@ -5,9 +5,11 @@ VDisk module
 from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import link
 from ovs.dal.lists.vdisklist import VDiskList
 from ovs.dal.hybrids.vdisk import VDisk
 from ovs.dal.hybrids.vmachine import VMachine
+from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
 from ovs.dal.exceptions import ObjectNotFoundException
 from backend.serializers.serializers import SimpleSerializer, FullSerializer
 from backend.decorators import required_roles, expose
@@ -48,3 +50,23 @@ class VDiskViewSet(viewsets.ViewSet):
         except ObjectNotFoundException:
             return Response(status=status.HTTP_404_NOT_FOUND)
         return Response(FullSerializer(VDisk, instance=vdisk).data, status=status.HTTP_200_OK)
+
+    @link()
+    @expose(internal=True, customer=True)
+    @required_roles(['view'])
+    def get_vsa(self, request, pk=None, format=None):
+        """
+        Returns the guid of VSA machine
+        """
+        _ = request, format
+        if pk is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            vdisk = VDisk(pk)
+        except ObjectNotFoundException:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        vsa_vmachine_guid = None
+        if vdisk.vsrid:
+            vsr = VolumeStorageRouter(vdisk.vsrid)
+            vsa_vmachine_guid = vsr.serving_vmachine.guid
+        return Response(vsa_vmachine_guid, status=status.HTTP_200_OK)
