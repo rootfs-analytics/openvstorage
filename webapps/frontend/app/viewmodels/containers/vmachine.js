@@ -11,12 +11,22 @@ define([
 
         // Variables
         self.loadVDisksHandle = undefined;
+        self.loadVSAGuid      = undefined;
         self.loadHandle       = undefined;
+        self.loadVpoolGuid    = undefined;
+
+        // External dependencies
+        self.vsas        = ko.observableArray([]);
+        self.vpools      = ko.observableArray([]);
 
         // Obserables
-        self.loading    = ko.observable(false);
+        self.loading     = ko.observable(false);
+        self.loaded      = ko.observable(false);
 
         self.guid        = ko.observable(guid);
+        self.vpool       = ko.observable();
+        self.vsaGuids    = ko.observableArray([]);
+        self.vPoolGuids  = ko.observableArray([]);
         self.name        = ko.observable();
         self.snapshots   = ko.observable();
         self.iops        = ko.smoothDeltaObservable(generic.formatShort);
@@ -37,6 +47,28 @@ define([
         self.vDiskGuids = [];
 
         // Functions
+        self.fetchVSAGuids = function() {
+            return $.Deferred(function(deferred) {
+                generic.xhrAbort(self.loadVSAGuid);
+                self.loadVSAGuid = api.get('vmachines/' + self.guid() + '/get_vsas')
+                    .done(function(data) {
+                        self.vsaGuids(data);
+                        deferred.resolve();
+                    })
+                    .fail(deferred.reject);
+            }).promise();
+        };
+        self.fetchVPoolGuids = function() {
+            return $.Deferred(function(deferred) {
+                generic.xhrAbort(self.loadVpoolGuid);
+                self.loadVpoolGuid = api.get('vmachines/' + self.guid() + '/get_vpools')
+                    .done(function(data) {
+                        self.vPoolGuids(data);
+                        deferred.resolve();
+                    })
+                    .fail(deferred.reject);
+            }).promise();
+        };
         self.loadDisks = function() {
             return $.Deferred(function(deferred) {
                 generic.xhrAbort(self.loadVDisksHandle);
@@ -78,7 +110,10 @@ define([
                                 .fail(deferred.reject);
                         }).promise()
                     ])
-                    .done(deferred.resolve)
+                    .done(function() {
+                        self.loaded(true);
+                        deferred.resolve();
+                    })
                     .fail(deferred.reject)
                     .always(function() {
                         self.loading(false);

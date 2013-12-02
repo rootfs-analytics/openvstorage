@@ -46,12 +46,14 @@
         "vmachines": "vMachines",
         "machines": "Machines",
         "name": "Name",
+        "vpool": "vPool",
+        "vsa": "VSA",
         "storeddata": "Stored data",
         "cache": "Cache",
         "iops": "IOPS",
         "latency": "Latency",
-        "readspeed": "Read speed",
-        "writespeed": "Write speed",
+        "readspeed": "Read",
+        "writespeed": "Write",
         "actions": "Actions",
         "showing": "Showing",
         "from": "from",
@@ -59,6 +61,7 @@
         "areyousure": "Are you sure?",
         "yes": "Yes",
         "no": "No",
+        "size": "Size",
         "customerapi": "Customer API"
     },
     "vpools" : {
@@ -98,6 +101,9 @@
         "machinemarked": "Machine __what__ is marked for deletion...",
         "deleted": "Machine deleted",
         "machinedeleted": "Machine __what__ deleted"
+    },
+    "vdisks": {
+        "title": "vDisks"
     },
     "dashboard": {
         "title": "Dashboard",

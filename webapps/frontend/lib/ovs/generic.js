@@ -201,6 +201,37 @@ define(['jquery', 'jqp/pnotify'], function($) {
             }
         }
     }
+    function crossFiller(newKeyList, currentKeyList, objectList, objectLoader) {
+        var i, getLength, getList;
+        getLength = function(list) {
+            if (list.call) {
+                return list().length;
+            }
+            return list.length;
+        };
+        getList = function(list) {
+            if (list.call) {
+                return list();
+            }
+            return list;
+        };
+        for (i = 0; i < getLength(newKeyList); i += 1) {
+            if ($.inArray(getList(newKeyList)[i], getList(currentKeyList)) === -1) {
+                // One of the new keys is not yet in our current key list. This means
+                // we'll have to load the object.
+                currentKeyList.push(getList(newKeyList)[i]);
+                objectList.push(objectLoader(getList(newKeyList)[i]));
+            }
+        }
+        for (i = 0; i < getLength(currentKeyList); i += 1) {
+            if ($.inArray(getList(currentKeyList)[i], getList(newKeyList)) === -1) {
+                // One of the existing keys is not in the new key list anymore. This means
+                // we'll have to remove the object
+                currentKeyList.splice(i, 1);
+                objectList.splice(i, 1);
+            }
+        }
+    }
 
     return {
         getTimestamp    : getTimestamp,
@@ -223,6 +254,7 @@ define(['jquery', 'jqp/pnotify'], function($) {
         round           : round,
         ceil            : ceil,
         buildString     : buildString,
-        setDecimals     : setDecimals
+        setDecimals     : setDecimals,
+        crossFiller     : crossFiller
     };
 });

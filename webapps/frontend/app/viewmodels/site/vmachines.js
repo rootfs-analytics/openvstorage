@@ -3,8 +3,8 @@
 define([
     'jquery', 'durandal/app', 'plugins/dialog', 'knockout',
     'ovs/shared', 'ovs/generic', 'ovs/refresher', 'ovs/api',
-    '../containers/vmachine', '../wizards/clone/index', '../wizards/snapshot/index'
-], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, CloneWizard, SnapshotWizard) {
+    '../containers/vmachine', '../containers/vpool', '../wizards/clone/index', '../wizards/snapshot/index'
+], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, VPool, CloneWizard, SnapshotWizard) {
     "use strict";
     return function() {
         var self = this;
@@ -18,6 +18,8 @@ define([
         // Data
         self.vMachineHeaders = [
             { key: 'name',       value: $.t('ovs:generic.name'),       width: 150,       colspan: undefined },
+            { key: 'vpool',      value: $.t('ovs:generic.vpool'),      width: 150,       colspan: undefined },
+            { key: 'vsa',        value: $.t('ovs:generic.vsa'),        width: 150,       colspan: undefined },
             { key: undefined,    value: $.t('ovs:generic.vdisks'),     width: 60,        colspan: undefined },
             { key: 'storedData', value: $.t('ovs:generic.storeddata'), width: 110,       colspan: undefined },
             { key: 'cacheRatio', value: $.t('ovs:generic.cache'),      width: 100,       colspan: undefined },
@@ -33,6 +35,12 @@ define([
         self.loadVMachinesHandle = undefined;
 
         // Functions
+        self.vpoolUrl = function(guid) {
+            return '#' + self.shared.mode() + '/vpool/' + (guid.call ? guid() : guid);
+        };
+        self.vmachineUrl = function(guid) {
+            return '#' + self.shared.mode() + '/vmachine/' + (guid.call ? guid() : guid);
+        };
         self.load = function() {
             return $.Deferred(function(deferred) {
                 generic.xhrAbort(self.loadVMachinesHandle);
@@ -42,22 +50,51 @@ define([
                         for (i = 0; i < data.length; i += 1) {
                             guids.push(data[i].guid);
                         }
-                        for (i = 0; i < guids.length; i += 1) {
-                            if ($.inArray(guids[i], self.vMachineGuids) === -1) {
-                                self.vMachineGuids.push(guids[i]);
-                                self.vMachines.push(new VMachine(guids[i]));
+                        generic.crossFiller(
+                            guids, self.vMachineGuids, self.vMachines,
+                            function(guid) {
+                                return new VMachine(guid);
                             }
-                        }
-                        for (i = 0; i < self.vMachineGuids.length; i += 1) {
-                            if ($.inArray(self.vMachineGuids[i], guids) === -1) {
-                                self.vMachineGuids.splice(i, 1);
-                                self.vMachines.splice(i, 1);
-                            }
-                        }
+                        );
                         deferred.resolve();
                     })
                     .fail(deferred.reject);
             }).promise();
+        };
+        self.loadVMachine = function(vm) {
+            $.when.apply($, [
+                    vm.load(),
+                    vm.fetchVSAGuids(),
+                    vm.fetchVPoolGuids()
+                ])
+                .done(function() {
+                    // Merge in the VSAs
+                    var i, currentGuids = [];
+                    for (i = 0; i < vm.vsas().length; i += 1) {
+                        currentGuids.push(vm.vsas()[i].guid());
+                    }
+                    generic.crossFiller(
+                        vm.vsaGuids, currentGuids, vm.vsas,
+                        function(guid) {
+                            var vm = new VMachine(guid);
+                            vm.load();
+                            return vm;
+                        }
+                    );
+                    // Merge in the vPools
+                    currentGuids = [];
+                    for (i = 0; i < vm.vpools().length; i += 1) {
+                        currentGuids.push(vm.vpools()[i].guid());
+                    }
+                    generic.crossFiller(
+                        vm.vPoolGuids, currentGuids, vm.vpools,
+                        function(guid) {
+                            var vm = new VPool(guid);
+                            vm.load();
+                            return vm;
+                        }
+                    );
+                });
         };
         self.clone = function(guid) {
             var i, vms = self.vMachines();
