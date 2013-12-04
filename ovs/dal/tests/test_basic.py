@@ -783,7 +783,6 @@ class Basic(TestCase):
         cdisk2.save()
         self.assertEqual(len(pdisk.children), 2, 'There should be 2 children.')
         self.assertEqual(cdisk1.parent.name, 'parent', 'Parent should be loaded correctly')
-
         data = DataList({'object': TestDisk,
                          'data': DataList.select.DESCRIPTOR,
                          'query': {'type': DataList.where_operator.AND,
@@ -798,6 +797,9 @@ class Basic(TestCase):
                                    'items': [('parent.name', DataList.operator.EQUALS, 'parent')]}}).data
         datalist = DataObjectList(data, TestDisk)
         self.assertEqual(len(datalist), 1, 'There should be one item (%s)' % len(datalist))
+        cdisk1.delete()
+        cdisk2.delete()
+        pdisk.delete()
 
 
 # Mocking classes
