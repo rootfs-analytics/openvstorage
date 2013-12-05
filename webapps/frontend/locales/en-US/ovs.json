@@ -110,7 +110,17 @@
         "marked": "Marked for deletion",
         "machinemarked": "Machine __what__ is marked for deletion...",
         "deleted": "Machine deleted",
-        "machinedeleted": "Machine __what__ deleted"
+        "machinedeleted": "Machine __what__ deleted",
+        "setastemplate": {
+            "title": "Set Virtual Machine __what__ as Template",
+            "warning": "Warning: converting a vMachine into a Template will remove it as active Virtual Machine from the Host. The Virtual Machine can no longer actively be used.",
+            "yes": "Set as Template",
+            "no": "Close",
+            "marked": "Marked for setting as template",
+            "machinemarked": "Machine __what__ is marked for setting as template...",
+            "done": "Machine set as template",
+            "machinesetastemplate": "Machine __what__ set as template"
+        }        
     },
     "vdisks": {
         "title": "vDisks"
