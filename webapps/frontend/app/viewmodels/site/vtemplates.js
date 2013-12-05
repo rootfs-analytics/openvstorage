@@ -58,10 +58,8 @@ define([
             }).promise();
         };
         self.loadVTemplate = function(vt) {
-            $.when.apply($, [
-                    vt.load(),
-                    vt.fetchTemplateChildrenGuids()
-                ]);
+            vt.load(),
+            vt.fetchTemplateChildrenGuids()
         };
         self.deleteVT = function(guid) {
             var i, vts = self.vTemplates(), vm;
@@ -73,21 +71,34 @@ define([
             if (vm !== undefined) {
                 (function(vm) {
                     app.showMessage(
-                            $.t('ovs:vmachines.suretodelete', { what: vm.name() }),
+                            $.t('ovs:vmachines.delete.warning', { what: vm.name() }),
                             $.t('ovs:generic.areyousure'),
                             [$.t('ovs:generic.yes'), $.t('ovs:generic.no')]
                         )
                         .done(function(answer) {
                             if (answer === $.t('ovs:generic.yes')) {
-                                self.vMachines.destroy(vm);
-                                generic.alertInfo($.t('ovs:vmachines.marked'), $.t('ovs:vmachines.machinemarked', { what: vm.name() }));
+                                self.vTemplates.destroy(vm);
+                                generic.alertInfo(
+                                    $.t('ovs:vmachines.delete.marked'),
+                                    $.t('ovs:vmachines.delete.markedmsg', { what: vm.name() })
+                                );
                                 api.del('vmachines/' + vm.guid())
                                     .then(self.shared.tasks.wait)
                                     .done(function() {
-                                        generic.alertSuccess($.t('ovs:vmachines.deleted'), $.t('ovs:vmachines.machinedeleted', { what: vm.name() }));
+                                        generic.alertSuccess(
+                                            $.t('ovs:vmachines.delete.done'),
+                                            $.t('ovs:vmachines.delete.donemsg', { what: vm.name() })
+                                        );
                                     })
                                     .fail(function(error) {
-                                        generic.alertSuccess($.t('ovs:generic.error'), 'Machine ' + vm.name() + ' could not be deleted: ' + error);
+                                        generic.alertError(
+                                            $.t('ovs:generic.error'),
+                                            $.t('ovs:generic.errorwhile', {
+                                                context: 'error',
+                                                what: $.t('ovs:vmachines.delete.errormsg', { what: vm.name() }),
+                                                error: error
+                                            })
+                                        );
                                     });
                             }
                         });

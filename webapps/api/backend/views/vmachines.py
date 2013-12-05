@@ -177,3 +177,20 @@ class VMachineViewSet(viewsets.ViewSet):
         vmachines = DataObjectList(query_result, VMachine).reduced
         serializer = SimpleSerializer(vmachines, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action()
+    @expose(internal=True, customer=True)
+    @required_roles(['view', 'create'])
+    def set_as_template(self, request, pk=None, format=None):
+        """
+        Sets a given machine as template
+        """
+        _ = format
+        if pk is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            vmachine = VMachine(pk)
+        except ObjectNotFoundException:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        task = VMachineController.set_as_template.s(machineguid=vmachine.guid).apply_async()
+        return Response(task.id, status=status.HTTP_200_OK)

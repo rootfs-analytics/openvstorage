@@ -117,20 +117,24 @@
     },
     "vmachines": {
         "title": "vMachines",
-        "suretodelete": "Are you sure you want to delete __what__?",
-        "marked": "Marked for deletion",
-        "machinemarked": "Machine __what__ is marked for deletion...",
-        "deleted": "Machine deleted",
-        "machinedeleted": "Machine __what__ deleted",
+        "delete": {
+            "warning": "Are you sure you want to delete __what__?",
+            "marked": "Marked for deletion",
+            "markedmsg": "Machine __what__ is marked for deletion...",
+            "done": "Machine deleted",
+            "donemsg": "Machine __what__ deleted",
+            "errormsg": "deleting __what__"
+        },
         "setastemplate": {
             "title": "Set Virtual Machine __what__ as Template",
             "warning": "Warning: converting a vMachine into a Template will remove it as active Virtual Machine from the Host. The Virtual Machine can no longer actively be used.",
             "yes": "Set as Template",
             "no": "Close",
             "marked": "Marked for setting as template",
-            "machinemarked": "Machine __what__ is marked for setting as template...",
+            "markedmsg": "Machine __what__ is marked for setting as template...",
             "done": "Machine set as template",
-            "machinesetastemplate": "Machine __what__ set as template"
+            "donemsg": "Machine __what__ set as template",
+            "errormsg": "setting __what__ as template"
         }
     },
     "vdisks": {
