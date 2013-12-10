@@ -193,3 +193,25 @@ class VMachineController(object):
         Creates a new VM based on a given vTemplate onto a given pMachine
         """
         _ = machineguid, pmachineguid, name, description
+
+    @staticmethod
+    @celery.task(name='ovs.machine.create_from_voldrv')
+    def create_from_voldrv(name):
+        """
+        This method creates a machine based on a given vmx filename. The vmx filename needs to
+        be linked to a hypervisor machine object from which all requred data can be retreived. It
+        should be able to cope with certain situations where for example the machine isn't yet
+        registered on the hypervisor
+        """
+        _ = name
+
+    @staticmethod
+    @celery.task(name='ovs.machine.update_from_voldrv')
+    def update_from_voldrv(name):
+        """
+        This method will update a vmachine based on a vmx file whos path is given. The vmx filename
+        needs to be linked to the hypervisor machine id which can be used to load the vmachine
+        object from our model. The model can then be updated. It should be able to copy with certain
+        situations where for example the machine isn't yet registered on the hypervisor
+        """
+        _ = name

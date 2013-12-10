@@ -63,8 +63,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk._create')
-    def _create(volumepath, volumename, volumesize, **kwargs):
+    @celery.task(name='ovs.disk.create_from_voldrv')
+    def create_from_voldrv(volumepath, volumename, volumesize, **kwargs):
         """
         Adds an existing volume to the disk model
         Triggered by volumedriver messages on the queue
@@ -83,8 +83,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.delete')
-    def _delete(volumepath, volumename, **kwargs):
+    @celery.task(name='ovs.disk.delete_from_voldrv')
+    def delete_from_voldrv(volumepath, volumename, **kwargs):
         """
         Delete a disk
         Triggered by volumedriver messages on the queue
@@ -95,7 +95,7 @@ class VDiskController(object):
               with an identifier to lock out multiple delete actions
               on the same disk
         """
-
+        _ = volumepath
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
         if disk is not None:
             logging.info('Delete disk {}'.format(disk.name))
@@ -103,8 +103,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.resize')
-    def resize(volumepath, volumename, volumesize, **kwargs):
+    @celery.task(name='ovs.disk.resize_from_voldrv')
+    def resize_from_voldrv(volumepath, volumename, volumesize, **kwargs):
         """
         Resize a disk
         Triggered by volumedriver messages on the queue
@@ -113,7 +113,7 @@ class VDiskController(object):
         @param volumename: volume id of the disk
         @param volumesize: size of the volume
         """
-
+        _ = volumepath
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
         logging.info('Resize disk {} from {} to {}'.format(
             disk.name, disk.size, volumesize))
@@ -122,8 +122,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.rename')
-    def rename(volumename, volume_old_path, volume_new_path, **kwargs):
+    @celery.task(name='ovs.disk.rename_from_voldrv')
+    def rename_from_voldrv(volumename, volume_old_path, volume_new_path, **kwargs):
         """
         Rename a disk
         Triggered by volumedriver messages
