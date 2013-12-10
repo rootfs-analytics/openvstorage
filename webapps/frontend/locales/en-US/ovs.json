@@ -3,13 +3,15 @@
         "status": {
             "vsa": {
                 "ok": "Online",
-                "nok": "Offline"
+                "nok": "Offline",
+                "undefined": "Unknown"
             },
             "foc": {
                 "ok_standalone": "Healthy",
                 "ok_sync": "Healty",
                 "catch_up": "Rebuilding",
-                "degraded": "Degraded"
+                "degraded": "Degraded",
+                "undefined": "Unknown"
             }
         },
         "username": "Username",
