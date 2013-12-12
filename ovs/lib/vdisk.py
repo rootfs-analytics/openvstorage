@@ -10,6 +10,7 @@ from ovs.celery import celery
 from ovs.dal.hybrids.vdisk import VDisk
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.lists.vdisklist import VDiskList
+from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
 
 vsr_client = VolumeStorageRouterClient().load()
@@ -63,8 +64,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk._create')
-    def _create(volumepath, volumename, volumesize, **kwargs):
+    @celery.task(name='ovs.disk.create_from_voldrv')
+    def create_from_voldrv(volumepath, volumename, volumesize, vsrid, **kwargs):
         """
         Adds an existing volume to the disk model
         Triggered by volumedriver messages on the queue
@@ -73,29 +74,25 @@ class VDiskController(object):
         @param volumename: volume id of the disk
         @param volumesize: size of the volume
         """
-
+        vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+        if vsr is None:
+            raise RuntimeError('VolumeStorageRouter could not be found')
         disk = VDisk()
-        disk.devicename = volumepath
+        disk.devicename = volumepath.replace('-flat.vmdk', '.vmdk')
         disk.volumeid = volumename
         disk.size = volumesize
+        disk.vpool = vsr.vpool
         disk.save()
-
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.delete')
-    def _delete(volumepath, volumename, **kwargs):
+    @celery.task(name='ovs.disk.delete_from_voldrv')
+    def delete_from_voldrv(volumename, **kwargs):
         """
         Delete a disk
         Triggered by volumedriver messages on the queue
-
-        @param volumepath: path on hypervisor to the volume
         @param volumename: volume id of the disk
-        TODO: as there are multiple delete paths create a tag object
-              with an identifier to lock out multiple delete actions
-              on the same disk
         """
-
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
         if disk is not None:
             logging.info('Delete disk {}'.format(disk.name))
@@ -103,8 +100,8 @@ class VDiskController(object):
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.resize')
-    def resize(volumepath, volumename, volumesize, **kwargs):
+    @celery.task(name='ovs.disk.resize_from_voldrv')
+    def resize_from_voldrv(volumename, volumesize, **kwargs):
         """
         Resize a disk
         Triggered by volumedriver messages on the queue
@@ -113,17 +110,15 @@ class VDiskController(object):
         @param volumename: volume id of the disk
         @param volumesize: size of the volume
         """
-
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
-        logging.info('Resize disk {} from {} to {}'.format(
-            disk.name, disk.size, volumesize))
+        logging.info('Resize disk {} from {} to {}'.format(disk.name, disk.size, volumesize))
         disk.size = volumesize
         disk.save()
         return kwargs
 
     @staticmethod
-    @celery.task(name='ovs.disk.rename')
-    def rename(volumename, volume_old_path, volume_new_path, **kwargs):
+    @celery.task(name='ovs.disk.rename_from_voldrv')
+    def rename_from_voldrv(volumename, volume_old_path, volume_new_path, **kwargs):
         """
         Rename a disk
         Triggered by volumedriver messages
@@ -133,8 +128,9 @@ class VDiskController(object):
         @param volume_new_path: new path on hypervisor to the volume
         """
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
-        logging.info('Move disk {} from {} to {}'.format(
-            disk.name, volume_old_path, volume_new_path))
+        logging.info('Move disk {} from {} to {}'.format(disk.name,
+                                                         volume_old_path,
+                                                         volume_new_path))
         disk.devicename = volume_new_path
         disk.save()
         return kwargs
