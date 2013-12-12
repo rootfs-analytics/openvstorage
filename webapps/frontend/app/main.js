@@ -33,9 +33,12 @@ requirejs.config({
 define([
     'durandal/system', 'durandal/app', 'durandal/viewLocator', 'durandal/binder', 'jquery', 'i18next',
     'ovs/shared',
-    'ovs/extensions/knockout-helpers', 'ovs/extensions/knockout-bindinghandlers', 'bootstrap'
+    'ovs/extensions/knockout-helpers', 'ovs/extensions/knockout-bindinghandlers', 'ovs/extensions/knockout-extensions',
+    'bootstrap'
 ],  function(system, app, viewLocator, binder, $, i18n, shared) {
     "use strict";
+    system.debug(true);
+
     shared.defaultLanguage = shared.language = window.navigator.userLanguage || window.navigator.language || 'en-US';
     var i18nOptions = {
         detectFromHeaders: false,
@@ -56,7 +59,7 @@ define([
         });
         app.configurePlugins({
             widget: {
-                kinds: ['pager', 'lazyloader', 'lazylist', 'footer']
+                kinds: ['pager', 'lazyloader', 'lazylist', 'footer', 'dropdown']
             }
         });
         app.start().then(function() {

@@ -18,7 +18,7 @@ define([
         self.vMachine       = ko.observable();
         self.vpool          = ko.observable();
 
-        // Obserables
+        // Observables
         self.loading        = ko.observable(false);
         self.loaded         = ko.observable(false);
 
@@ -85,9 +85,15 @@ define([
                                     self.snapshots(data.snapshots);
                                     self.size(data.size);
                                     self.storedData(data.info.stored);
-                                    self.failoverMode(data.info.failover_mode);
+                                    self.failoverMode(data.info.failover_mode.toLowerCase());
                                     self.vpoolGuid(data.vpool_guid);
                                     self.vMachineGuid(data.vmachine_guid);
+
+                                    self.snapshots.sort(function(a, b) {
+                                        // Sorting based on newest first
+                                        return b.timestamp - a.timestamp;
+                                    });
+
                                     deferred.resolve();
                                 })
                                 .fail(deferred.reject);

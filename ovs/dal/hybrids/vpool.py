@@ -22,14 +22,12 @@ class VPool(DataObject):
     _relations = {}
     _expiry = {'status':        (10, str),
                'statistics':     (5, dict),
-               'stored_data':   (60, int),
-               'failover_mode': (60, str)}
+               'stored_data':   (60, int)}
     # pylint: enable=line-too-long
 
     def _status(self):
         """
         Fetches the Status of the vPool.
-        @return: dict
         """
         _ = self
         return None
@@ -37,7 +35,6 @@ class VPool(DataObject):
     def _statistics(self):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk served by the vPool.
-        @return: dict
         """
         data = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
         for disk in self.vdisks:
@@ -49,16 +46,5 @@ class VPool(DataObject):
     def _stored_data(self):
         """
         Aggregates the Stored Data of each vDisk served by the vPool.
-        @return: int
         """
         return sum([disk.info['stored'] for disk in self.vdisks])
-
-    def _failover_mode(self):
-        """
-        Gets the agregated failover mode
-        """
-        status = None
-        for disk in self.vdisks:
-            if status is None or 'OK' not in disk.info['failover_mode']:
-                status = disk.info['failover_mode']
-        return status

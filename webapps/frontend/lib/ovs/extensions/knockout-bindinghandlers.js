@@ -109,6 +109,68 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
                 title: $.t(value.title),
                 content: $.t(value.content)
             });
+        },
+        update: function(element, valueAccessor) {
+            var value = valueAccessor();
+            $(element).tooltip('destroy');
+            $(element).popover({
+                html: true,
+                placement: 'auto',
+                trigger: 'click',
+                title: $.t(value.title),
+                content: $.t(value.content)
+            });
         }
     };
+    ko.bindingHandlers.tooltip = {
+        init: function(element, valueAccessor) {
+            var value = valueAccessor();
+            $(element).tooltip({
+                html: true,
+                placement: 'auto right',
+                title: $.t(value)
+            });
+        },
+        update: function(element, valueAccessor) {
+            var value = valueAccessor();
+            $(element).tooltip('destroy');
+            $(element).tooltip({
+                html: true,
+                placement: 'auto right',
+                title: $.t(value)
+            });
+        }
+    };
+    ko.bindingHandlers.icon = {
+        init: function(element, valueAccessor) {
+            var value = valueAccessor();
+            $(element).html($.t(value));
+        },
+        update: function(element, valueAccessor) {
+            var value = valueAccessor();
+            $(element).html($.t(value));
+        }
+    };
+    ko.bindingHandlers.shortText = {
+        init: function(element, valueAccessor, allBindings) {
+            var value = valueAccessor(),
+                maxLength = allBindings.get('maxLength');
+            if (maxLength !== undefined) {
+                if (value.length > maxLength - 3) {
+                    value = value.substr(0, maxLength - 3) + '&hellip;';
+                }
+            }
+            $(element).text(value);
+        },
+        update: function(element, valueAccessor, allBindings) {
+            var value = valueAccessor(),
+                maxLength = allBindings.get('maxLength');
+            if (maxLength !== undefined) {
+                if (value.length > maxLength - 3) {
+                    value = value.substr(0, maxLength - 3) + '&hellip;';
+                }
+            }
+            $(element).html(value);
+        }
+    }
 });

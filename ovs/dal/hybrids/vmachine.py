@@ -5,11 +5,6 @@ VMachine module
 from ovs.dal.dataobject import DataObject
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
-from collections import OrderedDict
-
-_vsrClient = VolumeStorageRouterClient().load()
-
-import pickle
 
 
 class VMachine(DataObject):
@@ -36,47 +31,37 @@ class VMachine(DataObject):
     def _snapshots(self):
         """
         Fetches a list of Snapshots for the vMachine.
-        @return: list
         """
-        snapshots = list()
-        _tmp_snapshots = OrderedDict()
-        for disk in self.vdisks:
-            for guid in disk.snapshots:
-                snapshot = _vsrClient.info_snapshot(str(disk.volumeid), guid)
-                metadata = pickle.loads(snapshot.metadata)
-                timestamp = metadata['timestamp']
-                if timestamp in _tmp_snapshots:
-                    _tmp_snapshots[timestamp]['snapshots'][disk.guid] = guid
-                else:
-                    snapshot_default = {'label' : metadata['label'],
-                                        'is_consistent' : metadata['is_consistent'],
-                                        'snapshots' : dict()
-                                        }
-                    snapshot_default['snapshots'][disk.guid] = guid
-                    _tmp_snapshots[timestamp] = snapshot_default
-        OrderedDict(sorted(_tmp_snapshots.items(), key=lambda k: k[0]))
-        for k, v in _tmp_snapshots.iteritems():
-            entry = dict()
-            entry['timestamp'] = k
-            entry['label'] = v['label']
-            entry['is_consistent'] = v['is_consistent']
-            entry['snapshots'] = v['snapshots']
-            snapshots.append(entry)
 
+        snapshots_structure = {}
+        for disk in self.vdisks:
+            for snapshot in disk.snapshots:
+                timestamp = snapshot['timestamp']
+                if timestamp not in snapshots_structure:
+                    snapshots_structure[timestamp] = {'label': snapshot['label'],
+                                                      'is_consistent': snapshot['is_consistent'],
+                                                      'snapshots': {}}
+                    snapshots_structure[timestamp]['snapshots'][disk.guid] = snapshot['guid']
+
+        snapshots = []
+        for timestamp in sorted(snapshots_structure.keys()):
+            item = snapshots_structure[timestamp]
+            snapshots.append({'timestamp': timestamp,
+                              'label': item['label'],
+                              'is_consistent': item['is_consistent'],
+                              'snapshots': item['snapshots']})
         return snapshots
 
     def _status(self):
         """
         Fetches the Status of the vMachine.
-        @return: dict
         """
         _ = self
-        return None
+        return 'OK'
 
     def _statistics(self):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk of the vMachine.
-        @return: dict
         """
         data = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
         for disk in self.vdisks:
@@ -88,7 +73,6 @@ class VMachine(DataObject):
     def _stored_data(self):
         """
         Aggregates the Stored Data of each vDisk of the vMachine.
-        @return: int
         """
         return sum([disk.info['stored'] for disk in self.vdisks])
 
@@ -96,8 +80,12 @@ class VMachine(DataObject):
         """
         Gets the aggregated failover mode
         """
-        status = None
+        status = 'OK_STANDALONE'
+        status_code = 0
         for disk in self.vdisks:
-            if status is None or 'OK' not in disk.info['failover_mode']:
-                status = disk.info['failover_mode']
+            mode = disk.info['failover_mode']
+            current_status_code = VolumeStorageRouterClient.FOC_STATUS[mode.lower()]
+            if current_status_code > status_code:
+                status = mode
+                status_code = current_status_code
         return status
