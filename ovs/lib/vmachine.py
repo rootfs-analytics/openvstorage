@@ -230,6 +230,13 @@ class VMachineController(object):
         """
         old_name = old_name.strip('/')
         new_name = new_name.strip('/')
+        # @TODO: When implementing more hypervisors, move part of code to hypervisor factory
+        # vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+        # hypervisor = Factory.get(vsr.serving_vmachine.pmachine)
+        # scenario = hypervisor.get_scenario(old_name, new_name)
+        # if scenario == 'RENAME': f00bar
+        # if scenario == 'UPDATED': f00bar
+        # > This way, this piece of code is hypervisor agnostic
         if old_name.endswith('.vmx') and new_name.endswith('.vmx'):
             # Most likely a change from path. Updaing path
             vm = VMachineList.get_by_devicename(old_name)
