@@ -98,7 +98,7 @@
         "backendtype": "Type",
         "backendtypes": {
             "S3": "Amazon S3",
-            "LOCAL": "Local filesystem",
+            "LOCAL": "Local FS",
             "REST": "REST backend"
         },
         "backendconnection": "Connection",
