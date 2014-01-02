@@ -44,7 +44,10 @@
                                      }, tooltip: 'ovs:generic.status.foc.' + failoverMode()"></span>
                 </td>
                 <td>
-                    <i data-bind="click: function() { $root.rollback($data.guid()); }"  class="hand fa fa-fw" data-i18n="[html]ovs:icons.rollback"></i>
+                    <i data-bind="click: function() { $root.rollback($data.guid()); }, style: { color: vMachine() !== undefined && vMachine().isRunning() ? 'lightgrey' : 'black' },
+                                  tooltip: vMachine() !== undefined && vMachine().isRunning() ? 'ovs:generic.messages.notrunningrequired' : '',
+                                  css: { hand: !(vMachine() !== undefined && vMachine().isRunning()), forbidden: vMachine() !== undefined && vMachine().isRunning() }"
+                       class="hand fa fa-fw" data-i18n="[html]ovs:icons.rollback"></i>
                 </td>
             </tr>
         </table>
