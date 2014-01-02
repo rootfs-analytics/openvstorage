@@ -10,7 +10,19 @@ if os.getegid() != 0:
 parser = OptionParser(description='CloudFrames vRun Setup')
 parser.add_option('--no-filesystems', dest='filesystems', action="store_false", default=True,
                   help="Don't create partitions and filesystems")
+parser.add_option('-c', '--clean', dest='clean', action="store_true", default=False,
+                  help="Try to clean environment before reinstalling")
 (options, args) = parser.parse_args()
+
+if options.clean:
+    #Stop NFS
+    os.system('service nfs-kernel-server stop')
+    #Kill procs
+    #Remove config
+    #Remove dirs
+    os.system('rm -rf /usr/local/lib/python2.7/*-packages/JumpScale*')
+    os.system('rm -rf /opt/jumpscale')
+    os.system('rm -rf /opt/OpenvStorage')
 
 if options.filesystems:
     # Create partitions on HDD
@@ -68,6 +80,7 @@ if not quality_level in supported_quality_levels:
     raise ValueError('Please specify correct qualitylevel, one of {0}'.format(supported_quality_levels))
 
 # Install all software components
+os.system('apt-get -y update')
 os.system('apt-get -y install python-pip')
 os.system('pip install https://bitbucket.org/jumpscale/jumpscale_core/get/default.zip')
 os.system('jpackage_update')
@@ -93,12 +106,27 @@ blobstorremote = jp_openvstorage
 blobstorlocal = jpackages_local
 """ % {'qualityLevel': quality_level}
 
+# Following repo is required because doc_ & www_openvstorage have a dependency to incubaid_portals
+# and during jumpscale core install a reverse dependency tree can otherwise not be resolved.
+jp_incubaid_repo = """
+[incubaid]
+metadatafromtgz = 0
+qualitylevel = unstable
+metadatadownload = 
+metadataupload = 
+bitbucketaccount = incubaid
+bitbucketreponame = jp_incubaid
+blobstorremote = jpackages_remote
+blobstorlocal = jpackages_local
+"""
+
 blobstor_config = open('/opt/jumpscale/cfg/jsconfig/blobstor.cfg', 'a')
 blobstor_config.write(jp_openvstorage_blobstor)
 blobstor_config.close()
 
 jp_sources_config = open('/opt/jumpscale/cfg/jpackages/sources.cfg', 'a')
 jp_sources_config.write(jp_openvstorage_repo)
+jp_sources_config.write(jp_incubaid_repo)
 jp_sources_config.close()
 
 os.system('jpackage_update')
