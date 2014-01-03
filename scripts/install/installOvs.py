@@ -106,27 +106,12 @@ blobstorremote = jp_openvstorage
 blobstorlocal = jpackages_local
 """ % {'qualityLevel': quality_level}
 
-# Following repo is required because doc_ & www_openvstorage have a dependency to incubaid_portals
-# and during jumpscale core install a reverse dependency tree can otherwise not be resolved.
-jp_incubaid_repo = """
-[incubaid]
-metadatafromtgz = 0
-qualitylevel = unstable
-metadatadownload = 
-metadataupload = 
-bitbucketaccount = incubaid
-bitbucketreponame = jp_incubaid
-blobstorremote = jpackages_remote
-blobstorlocal = jpackages_local
-"""
-
 blobstor_config = open('/opt/jumpscale/cfg/jsconfig/blobstor.cfg', 'a')
 blobstor_config.write(jp_openvstorage_blobstor)
 blobstor_config.close()
 
 jp_sources_config = open('/opt/jumpscale/cfg/jpackages/sources.cfg', 'a')
 jp_sources_config.write(jp_openvstorage_repo)
-jp_sources_config.write(jp_incubaid_repo)
 jp_sources_config.close()
 
 os.system('jpackage_update')
