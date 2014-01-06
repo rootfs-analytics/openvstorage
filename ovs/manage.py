@@ -266,7 +266,8 @@ class Configure():
                 open(filename, 'a').close()
 
         config_file = os.path.join(Configuration.get('ovs.core.cfgdir'), '{}.json'.format(vpool_name))
-        cmd = '/usr/bin/volumedriver_fs -f --config-file={} --mountpoint {} -o big_writes -o uid=0 -o gid=0 -o sync_read'.format(config_file, vrouter.mountpoint)
+        log_file = os.path.join(os.sep, 'var', 'log', '{}.log'.format(vpool_name))
+        cmd = '/usr/bin/volumedriver_fs -f --config-file={} --mountpoint {} --logfile {} -o big_writes -o uid=0 -o gid=0 -o sync_read'.format(config_file, vrouter.mountpoint, log_file)
         stopcmd = 'exportfs -u *:{0}; umount {0}'.format(vrouter.mountpoint)
         name = 'volumedriver_{}'.format(vpool_name)
         Service.add_service(package=('openvstorage', 'volumedriver'), name=name, command=cmd, stop_command=stopcmd)
