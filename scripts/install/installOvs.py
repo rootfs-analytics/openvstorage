@@ -25,9 +25,11 @@ parser.add_option('-c', '--clean', dest='clean', action="store_true", default=Fa
 if options.clean:
     print 'Trying to clean previous install...'
     run_command('service nfs-kernel-server stop', fail=False)
+    run_command('pkill arakoon', fail=False)
     run_command('rm -rf /usr/local/lib/python2.7/*-packages/JumpScale*', fail=False)
     run_command('rm -rf /opt/jumpscale', fail=False)
     run_command('rm -rf /opt/OpenvStorage', fail=False)
+    run_command('rm -rf /mnt/db/arakoon /mnt/db/tlogs')
 
 if options.filesystems:
     print 'Creating filesystems...'
@@ -120,8 +122,8 @@ namespace = jpackages
 
 jp_openvstorage_blobstor = """
 [jp_openvstorage]
-ftp = ftp://10.100.129.101
-http = http://10.100.129.101/ovs-blobstore
+ftp = ftp://packages.cloudfounders.com
+http = http://packages.cloudfounders.com/ovs
 namespace = jpackages
 localpath =
 type = httpftp
@@ -143,7 +145,7 @@ jp_openvstorage_repo = """
 [openvstorage]
 metadatafromtgz = 0
 qualitylevel = %(qualityLevel)s
-metadatadownload = http://10.100.129.101/ovs-metadata
+metadatadownload = http://packages.cloudfounders.com/metadataTgz
 metadataupload = file://opt/jumpscale/var/jpackages/metatars
 bitbucketaccount = openvstorage
 bitbucketreponame = jp_openvstorage
