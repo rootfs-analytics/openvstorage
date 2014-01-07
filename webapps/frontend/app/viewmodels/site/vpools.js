@@ -67,9 +67,16 @@ define([
         // Durandal
         self.activate = function() {
             self.refresher.init(self.load, 5000);
-            self.refresher.run();
             self.refresher.start();
             self.shared.footerData(self.vPools);
+
+            self.load()
+                .done(function() {
+                    var i, vpools = self.vPools();
+                    for (i = 0; i < vpools.length; i += 1) {
+                        self.loadVPool(vpools[i]);
+                    }
+                });
         };
         self.deactivate = function() {
             var i;

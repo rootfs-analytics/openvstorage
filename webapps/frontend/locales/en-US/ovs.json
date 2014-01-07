@@ -11,7 +11,7 @@
                 "ok_sync": "Healty",
                 "catch_up": "Rebuilding",
                 "degraded": "Degraded",
-                "undefined": "Unknown"
+                "unknown": "Unknown"
             }
         },
         "messages": {

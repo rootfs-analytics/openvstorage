@@ -5,6 +5,8 @@ VPool module
 from ovs.dal.dataobject import DataObject
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
 
+_vsr_client = VolumeStorageRouterClient().load()
+
 
 class VPool(DataObject):
     """
@@ -36,12 +38,16 @@ class VPool(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk served by the vPool.
         """
-        data = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
+        vdiskstats = _vsr_client.empty_statistcs()
+        vdiskstatsdict = {}
+        for key, value in vdiskstats.__class__.__dict__.items():
+            if type(value) is property:
+                vdiskstatsdict[key] = getattr(vdiskstats, key)
         for disk in self.vdisks:
             statistics = disk.statistics
-            for key, value in statistics.iteritems():
-                data[key] = data.get(key, 0) + value
-        return data
+            for key in vdiskstatsdict.iterkeys():
+                vdiskstatsdict[key] += statistics[key]
+        return vdiskstatsdict
 
     def _stored_data(self):
         """

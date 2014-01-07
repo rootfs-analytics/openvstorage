@@ -106,9 +106,9 @@ run_command('pip -q install -I https://bitbucket.org/jumpscale/jumpscale_core/ge
 
 jp_jumpscale_blobstor = """
 [jpackages_local]
-ftp = 
+ftp =
 type = local
-http = 
+http =
 localpath = /opt/jpackagesftp
 namespace = jpackages
 
@@ -116,7 +116,7 @@ namespace = jpackages
 ftp = ftp://publicrepo.incubaid.com
 type = httpftp
 http = http://publicrepo.incubaid.com
-localpath = 
+localpath =
 namespace = jpackages
 """
 
@@ -133,8 +133,8 @@ jp_jumpscale_repo = """
 [jumpscale]
 metadatafromtgz = 0
 qualitylevel = test
-metadatadownload = 
-metadataupload = 
+metadatadownload =
+metadataupload =
 bitbucketaccount = jumpscale
 bitbucketreponame = jp_jumpscale
 blobstorremote = jpackages_remote
@@ -177,4 +177,5 @@ run_command('jpackage_install -n core')
 print 'Starting Open vStorage installation...'
 run_command('jpackage_install -n openvstorage')
 
+run_command('source /etc/profile.d/OpenvStorage.sh')
 print 'Installation complete.'

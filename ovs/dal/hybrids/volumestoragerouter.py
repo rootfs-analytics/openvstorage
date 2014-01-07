@@ -7,6 +7,8 @@ from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
 
+_vsr_client = VolumeStorageRouterClient().load()
+
 
 class VolumeStorageRouter(DataObject):
     """
@@ -38,14 +40,18 @@ class VolumeStorageRouter(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of the vDisks connected to the VSR.
         """
-        data = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
+        vdiskstats = _vsr_client.empty_statistcs()
+        vdiskstatsdict = {}
+        for key, value in vdiskstats.__class__.__dict__.items():
+            if type(value) is property:
+                vdiskstatsdict[key] = getattr(vdiskstats, key)
         if self.vpool is not None:
             for disk in self.vpool.vdisks:
                 if disk.vsrid == self.vsrid:
                     statistics = disk.statistics
-                    for key, value in statistics.iteritems():
-                        data[key] = data.get(key, 0) + value
-        return data
+                    for key in vdiskstatsdict.iterkeys():
+                        vdiskstatsdict[key] += statistics[key]
+        return vdiskstatsdict
 
     def _stored_data(self):
         """

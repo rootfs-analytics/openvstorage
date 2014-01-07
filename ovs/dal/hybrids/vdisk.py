@@ -43,18 +43,19 @@ class VDisk(DataObject):
         Fetches a list of Snapshots for the vDisk
         """
 
-        volumeid = str(self.volumeid)
         snapshots = []
-        for guid in _vsr_client.list_snapshots(volumeid):
-            snapshot = _vsr_client.info_snapshot(volumeid, guid)
-            # @todo: to be investigated howto handle during
-            # set as template
-            if snapshot.metadata:
-                metadata = pickle.loads(snapshot.metadata)
-                snapshots.append({'guid': guid,
-                                  'timestamp': metadata['timestamp'],
-                                  'label': metadata['label'],
-                                  'is_consistent': metadata['is_consistent']})
+        if self.volumeid:
+            volumeid = str(self.volumeid)
+            for guid in _vsr_client.list_snapshots(volumeid):
+                snapshot = _vsr_client.info_snapshot(volumeid, guid)
+                # @todo: to be investigated howto handle during
+                # set as template
+                if snapshot.metadata:
+                    metadata = pickle.loads(snapshot.metadata)
+                    snapshots.append({'guid': guid,
+                                      'timestamp': metadata['timestamp'],
+                                      'label': metadata['label'],
+                                      'is_consistent': metadata['is_consistent']})
         return snapshots
 
     def _info(self):
@@ -63,30 +64,30 @@ class VDisk(DataObject):
         """
         if self.volumeid:
             vdiskinfo = _vsr_client.info_volume(str(self.volumeid))
-            vdiskinfodict = dict()
-
-            for infoattribute in dir(vdiskinfo):
-                if infoattribute.startswith('_'):
-                    continue
-                elif infoattribute == 'volume_type':
-                    vdiskinfodict[infoattribute] = str(getattr(vdiskinfo, infoattribute))
-                else:
-                    vdiskinfodict[infoattribute] = getattr(vdiskinfo, infoattribute)
-
-            return vdiskinfodict
         else:
-            return dict()
+            vdiskinfo = _vsr_client.empty_info()
+
+        vdiskinfodict = {}
+        for key, value in vdiskinfo.__class__.__dict__.items():
+            if type(value) is property:
+                vdiskinfodict[key] = getattr(vdiskinfo, key)
+                if key == 'volume_type':
+                    vdiskinfodict[key] = str(vdiskinfodict[key])
+        return vdiskinfodict
 
     def _statistics(self):
         """
         Fetches the Statistics for the vDisk.
         """
-        vdiskstatsdict = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
         if self.volumeid:
             vdiskstats = _vsr_client.statistics_volume(str(self.volumeid))
+        else:
+            vdiskstats = _vsr_client.empty_statistcs()
 
-            for key in VolumeStorageRouterClient.STATISTICS_KEYS:
-                    vdiskstatsdict[key] = getattr(vdiskstats, key)
+        vdiskstatsdict = {}
+        for key, value in vdiskstats.__class__.__dict__.items():
+            if type(value) is property:
+                vdiskstatsdict[key] = getattr(vdiskstats, key)
 
         return vdiskstatsdict
 

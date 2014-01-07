@@ -57,9 +57,8 @@ define([
                 self.loadVSAGuid = api.get('vdisks/' + self.guid() + '/get_vsa')
                     .done(function(data) {
                         self.vsaGuid(data);
-                        deferred.resolve();
                     })
-                    .fail(deferred.reject);
+                    .always(deferred.resolve);
             }).promise();
         };
         self.load = function() {
@@ -85,7 +84,7 @@ define([
                                     self.snapshots(data.snapshots);
                                     self.size(data.size);
                                     self.storedData(data.info.stored);
-                                    self.failoverMode(data.info.failover_mode.toLowerCase());
+                                    self.failoverMode(data.info.failover_mode.toLowerCase() || 'unknown');
                                     self.vpoolGuid(data.vpool_guid);
                                     self.vMachineGuid(data.vmachine_guid);
 

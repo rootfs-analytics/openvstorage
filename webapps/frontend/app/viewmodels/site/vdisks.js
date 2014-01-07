@@ -71,7 +71,7 @@ define([
                             vsaGuid = vdisk.vsaGuid(),
                             vMachineGuid = vdisk.vMachineGuid(),
                             vPoolGuid = vdisk.vpoolGuid();
-                        if ((vdisk.vsa() === undefined || vdisk.vsa().guid() !== vsaGuid) && vsaGuid) {
+                        if (vsaGuid && (vdisk.vsa() === undefined || vdisk.vsa().guid() !== vsaGuid)) {
                             if (!self.vsaCache.hasOwnProperty(vsaGuid)) {
                                 vm = new VMachine(vsaGuid);
                                 vm.load();
@@ -79,7 +79,7 @@ define([
                             }
                             vdisk.vsa(self.vsaCache[vsaGuid]);
                         }
-                        if ((vdisk.vMachine() === undefined || vdisk.vMachine().guid() !== vMachineGuid) && vMachineGuid) {
+                        if (vMachineGuid && (vdisk.vMachine() === undefined || vdisk.vMachine().guid() !== vMachineGuid)) {
                             if (!self.vMachineCache.hasOwnProperty(vMachineGuid)) {
                                 vm = new VMachine(vMachineGuid);
                                 vm.load();
@@ -87,7 +87,7 @@ define([
                             }
                             vdisk.vMachine(self.vMachineCache[vMachineGuid]);
                         }
-                        if ((vdisk.vpool() === undefined || vdisk.vpool().guid() !== vPoolGuid) && vPoolGuid) {
+                        if (vPoolGuid && (vdisk.vpool() === undefined || vdisk.vpool().guid() !== vPoolGuid)) {
                             if (!self.vPoolCache.hasOwnProperty(vPoolGuid)) {
                                 pool = new VPool(vPoolGuid);
                                 pool.load();
@@ -121,9 +121,16 @@ define([
         // Durandal
         self.activate = function() {
             self.refresher.init(self.load, 5000);
-            self.refresher.run();
             self.refresher.start();
             self.shared.footerData(self.vDisks);
+
+            self.load()
+                .done(function() {
+                    var i, vdisks = self.vDisks();
+                    for (i = 0; i < vdisks.length; i += 1) {
+                        self.loadVDisk(vdisks[i]);
+                    }
+                });
         };
         self.deactivate = function() {
             var i;

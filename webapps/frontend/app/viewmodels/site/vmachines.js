@@ -179,9 +179,16 @@ define([
         // Durandal
         self.activate = function() {
             self.refresher.init(self.fetchVMachines, 5000);
-            self.refresher.run();
             self.refresher.start();
             self.shared.footerData(self.vMachines);
+
+            self.fetchVMachines()
+                .done(function() {
+                    var i, vmachines = self.vMachines();
+                    for (i = 0; i < vmachines.length; i += 1) {
+                        self.loadVMachine(vmachines[i]);
+                    }
+                });
         };
         self.deactivate = function() {
             var i;

@@ -119,9 +119,16 @@ define([
         // Durandal
         self.activate = function() {
             self.refresher.init(self.load, 5000);
-            self.refresher.run();
             self.refresher.start();
             self.shared.footerData(self.vTemplates);
+
+            self.load()
+                .done(function() {
+                    var i, vtemplates = self.vTemplates();
+                    for (i = 0; i < vtemplates.length; i += 1) {
+                        self.loadVTemplate(vtemplates[i]);
+                    }
+                });
         };
         self.deactivate = function() {
             var i;

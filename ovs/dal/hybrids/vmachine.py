@@ -7,6 +7,9 @@ from ovs.dal.hybrids.pmachine import PMachine
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
 from ovs.extensions.hypervisor.factory import Factory as hvFactory
 
+_vsr_client = VolumeStorageRouterClient().load()
+
+
 class VMachine(DataObject):
     """
     The VMachine class represents a vMachine. A vMachine is a Virtual Machine with vDisks
@@ -58,7 +61,7 @@ class VMachine(DataObject):
         """
         Fetches the Status of the vMachine.
         """
-        if self.hypervisorid is None:
+        if self.hypervisorid is None or self.pmachine is None:
             return 'UNKNOWN'
         hv = hvFactory.get(self.pmachine)
         return hv.get_state(self.hypervisorid)
@@ -67,12 +70,16 @@ class VMachine(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk of the vMachine.
         """
-        data = dict([(key, 0) for key in VolumeStorageRouterClient.STATISTICS_KEYS])
+        vdiskstats = _vsr_client.empty_statistcs()
+        vdiskstatsdict = {}
+        for key, value in vdiskstats.__class__.__dict__.items():
+            if type(value) is property:
+                vdiskstatsdict[key] = getattr(vdiskstats, key)
         for disk in self.vdisks:
             statistics = disk.statistics
-            for key, value in statistics.iteritems():
-                data[key] = data.get(key, 0) + value
-        return data
+            for key in vdiskstatsdict.iterkeys():
+                vdiskstatsdict[key] += statistics[key]
+        return vdiskstatsdict
 
     def _stored_data(self):
         """
@@ -84,7 +91,7 @@ class VMachine(DataObject):
         """
         Gets the aggregated failover mode
         """
-        status = 'OK_STANDALONE'
+        status = 'UNKNOWN'
         status_code = 0
         for disk in self.vdisks:
             mode = disk.info['failover_mode']
