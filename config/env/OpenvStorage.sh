@@ -2,7 +2,7 @@
 
 export PYTHONPATH="${PYTHONPATH}:/opt/OpenvStorage:/opt/OpenvStorage/webapps"
 
-function ovs() {
+ovs() {
   source /opt/OpenvStorage/bin/activate
   cd /opt/OpenvStorage
   ipython
