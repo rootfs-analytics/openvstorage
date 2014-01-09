@@ -132,8 +132,8 @@ class VMachineController(object):
             vmachine = VMachineList.get_by_devicename(name)
             if not vmachine:
                 vmachine = VMachine()
+                vmachine.status = 'CREATED'
             vmachine.devicename = name
-            vmachine.status = 'CREATED'
             vmachine.save()
 
     @staticmethod
