@@ -69,7 +69,8 @@ def ensure_single(tasknames):
                     for taskname in tasknames:
                         for worker in scheduled.values():
                             for task in worker:
-                                if task['id'] != task_id and taskname == task['name']:
+                                request = task['request']
+                                if request['id'] != task_id and taskname == request['name']:
                                     return False
                     reserved = inspector.reserved()
                     for taskname in tasknames:
@@ -82,6 +83,9 @@ def ensure_single(tasknames):
             if can_run():
                 return function(*args, **kwargs)
             else:
+                print 'Execution of task {0}[{1}] discarded'.format(
+                    self.name, self.request.id
+                )
                 return None
 
         return wrapped
@@ -97,23 +101,26 @@ class ScheduledTaskController(object):
     @staticmethod
     @celery.task(name='ovs.scheduled.snapshotall', bind=True)
     @ensure_single(['ovs.scheduled.snapshotall', 'ovs.scheduled.deletescrubsnapshots'])
-    def snapshot_all_vms(*args, **kwargs):
+    def snapshot_all_vms():
         """
         Snapshots all VMachines
         """
-
-        _ = (args, kwargs)
         loghandler.logger.info('[SSA] started')
-        tasks = []
+        success = []
+        fail = []
         machines = VMachineList.get_vmachines()
         for machine in machines:
             if not machine.is_vtemplate:
-                tasks.append(VMachineController.snapshot.s(machineguid=machine.guid,
-                                                           label='',
-                                                           is_consistent=False))
-        workflow = group(task for task in tasks)
-        loghandler.logger.info('[SSA] %d disk snapshots launched' % len(tasks))
-        return workflow()
+                try:
+                    VMachineController.snapshot(machineguid=machine.guid,
+                                                label='',
+                                                is_consistent=False)
+                    success.append(machine.guid)
+                except:
+                    fail.append(machine.guid)
+        loghandler.logger.info('[SSA] {0} vMachines were snapshotted, {1} failed.'.format(
+            len(success), len(fail)
+        ))
 
     @staticmethod
     @celery.task(name='ovs.scheduled.deletescrubsnapshots', bind=True)

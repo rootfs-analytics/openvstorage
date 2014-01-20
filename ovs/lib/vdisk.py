@@ -174,10 +174,11 @@ class VDiskController(object):
             metadata=metadata
         )
         disk.invalidate_dynamics(['snapshots'])
+        return snapshotid
 
     @staticmethod
     @celery.task(name='ovs.disk.delete_snapshot')
-    def delete_snapshot(diskguid, snapshotid, **kwargs):
+    def delete_snapshot(diskguid, snapshotid):
         """
         Delete a disk snapshot
 
@@ -189,16 +190,13 @@ class VDiskController(object):
         if a clone was created from it.
         """
         disk = VDisk(diskguid)
-        _snap = '{}'.format(snapshotid)
-        logging.info(
-            'Deleting snapshot {} from disk {}'.format(_snap, diskguid))
-        vsr_client.delete_snapshot(disk.volumeid, _snap)
+        logging.info('Deleting snapshot {} from disk {}'.format(snapshotid, disk.name))
+        vsr_client.delete_snapshot(str(disk.volumeid), str(snapshotid))
         disk.invalidate_dynamics(['snapshots'])
-        return kwargs
 
     @staticmethod
     @celery.task(name='ovs.disk.set_as_template')
-    def set_as_template(diskguid, **kwargs):
+    def set_as_template(diskguid):
         """
         Set a disk as template
 
@@ -207,8 +205,6 @@ class VDiskController(object):
 
         disk = VDisk(diskguid)
         vsr_client.set_volume_as_template(str(disk.volumeid))
-
-        return kwargs
 
     @staticmethod
     @celery.task(name='ovs.disk.rollback')
@@ -262,9 +258,14 @@ class VDiskController(object):
         logging.info('Create disk from template {} to new disk {} to location {}'.format(
             disk.name, new_disk.name, device_location
         ))
-        volumeid = vsr_client.create_clone_from_template('/' + device_location, str(disk.volumeid))
-        new_disk.volumeid = volumeid
-        new_disk.save()
+        try:
+            volumeid = vsr_client.create_clone_from_template('/' + device_location, str(disk.volumeid))
+            new_disk.volumeid = volumeid
+            new_disk.save()
+        except Exception as ex:
+            logging.error('Clone disk on volumedriver level failed with exception: {0}'.format(str(ex)))
+            new_disk.delete()
+            raise
 
         return {'diskguid': new_disk.guid, 'name': new_disk.name,
                 'backingdevice': device_location.strip('/')}

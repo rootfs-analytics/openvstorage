@@ -57,20 +57,24 @@ class VMachineController(object):
 
         target_pm = PMachine(pmachineguid)
 
-        nr_of_vpools = 0
+        vpool = None
+        vpool_guids = set()
         for disk in template_vm.vdisks:
             vpool = disk.vpool
-            nr_of_vpools += 1
-        if nr_of_vpools != 1:
-            raise RuntimeError('Only 1 vpool supported on template disk(s) - {0} found!'.format(nr_of_vpools))
+            vpool_guids.add(vpool.guid)
+        if len(vpool_guids) != 1:
+            raise RuntimeError('Only 1 vpool supported on template disk(s) - {0} found!'.format(len(vpool_guids)))
 
         if not template_vm.pmachine.hvtype == target_pm.hvtype:
             raise RuntimeError('Source and target hypervisor not identical')
 
+        vsr = None
         for vsr in vpool.vsrs:
             if vsr.serving_vmachine.pmachine.guid == target_pm.guid:
                 break
             raise RuntimeError('Volume not served on target hypervisor')
+        if vsr is None:
+            raise RuntimeError('No VSR found')
 
         source_hv = Factory.get(template_vm.pmachine)
         target_hv = Factory.get(target_pm)
@@ -81,8 +85,11 @@ class VMachineController(object):
 
         source_vm = source_hv.get_vm_object(template_vm.hypervisorid)
         if not source_vm:
-            raise RuntimeError(
-                'VM with key reference %s not found' % template_vm.hypervisorid)
+            raise RuntimeError('VM with key reference {0} not found'.format(template_vm.hypervisorid))
+
+        name_duplicates = VMachineList.get_vmachine_by_name(name)
+        if name_duplicates is not None and len(name_duplicates) > 0:
+            raise RuntimeError('A vMachine with name {0} already exists'.format(name))
 
         # @todo verify all disks can be cloned on target
         # @todo ie vpool is available on both hypervisors
@@ -99,17 +106,23 @@ class VMachineController(object):
 
         disks = []
         disks_by_order = sorted(template_vm.vdisks, key=lambda x: x.order)
-        for disk in disks_by_order:
-            prefix = '{0}-clone'.format(disk.name)
-            result = VDiskController.create_from_template(
-                diskguid=disk.guid,
-                devicename=prefix,
-                location=new_vm.name.replace(' ', '_'),
-                machineguid=new_vm.guid)
-            disks.append(result)
-
-        # @todo: cleanup when not all disks could be successfully created
-        # @todo: skip vm creation on hypervisor in that case
+        try:
+            for disk in disks_by_order:
+                prefix = '{0}-clone'.format(disk.name)
+                result = VDiskController.create_from_template(
+                    diskguid=disk.guid,
+                    devicename=prefix,
+                    location=new_vm.name.replace(' ', '_'),
+                    machineguid=new_vm.guid
+                )
+                disks.append(result)
+                print 'disk appended: {0}'.format(result)
+        except Exception as ex:
+            for disk in disks:
+                # @todo cleanup strategy to be defined
+                pass
+            new_vm.delete()
+            raise
 
         provision_machine_task = target_hv.create_vm_from_template.s(
             target_hv, name, source_vm, disks, esxhost=None, wait=True
@@ -162,39 +175,29 @@ class VMachineController(object):
         new_machine.name = name
         new_machine.save()
 
-        disk_tasks = []
+        new_disk_guids = []
         disks_by_order = sorted(machine.vdisks, key=lambda x: x.order)
         for currentDisk in disks_by_order:
-            if machine.template and currentDisk.templatesnapshot:
+            if machine.is_vtemplate and currentDisk.templatesnapshot:
                 snapshotid = currentDisk.templatesnapshot
             else:
                 snapshotid = disks[currentDisk.guid]
             prefix = '%s-clone' % currentDisk.name
-            clone_task = VDiskController.clone.s(diskguid=currentDisk.guid,
-                                                 snapshotid=snapshotid,
-                                                 devicename=prefix,
-                                                 location=new_machine.name,
-                                                 machineguid=new_machine.guid)
-            disk_tasks.append(clone_task)
-        clone_disk_tasks = group(t for t in disk_tasks)
-        group_result = clone_disk_tasks()
-        while not group_result.ready():
-            time.sleep(1)
-        if group_result.successful():
-            disks = group_result.join()
-        else:
-            for task_result in group_result:
-                if task_result.successfull():
-                    VDiskController.delete(
-                        diskguid=task_result.get()['diskguid'])
-            new_machine.delete()
-            return group_result.successful()
+
+            result = VDiskController.clone(diskguid=currentDisk.guid,
+                                           snapshotid=snapshotid,
+                                           devicename=prefix,
+                                           location=new_machine.name,
+                                           machineguid=new_machine.guid)
+            new_disk_guids.append(result['diskguid'])
 
         hv = Factory.get(machine.pmachine)
         provision_machine_task = hv.clone_vm.s(
-            hv, machine.hypervisorid, name, disks, None, True)
+            hv, machine.hypervisorid, name, disks, None, True
+        )
         provision_machine_task.link_error(
-            VMachineController.delete.s(machineguid=new_machine.guid))
+            VMachineController.delete.s(machineguid=new_machine.guid)
+        )
         result = provision_machine_task()
 
         new_machine.hypervisorid = result.get()
@@ -212,22 +215,15 @@ class VMachineController(object):
         _ = kwargs
         machine = VMachine(machineguid)
 
-        clean_dal = False
         if machine.pmachine:
             hv = Factory.get(machine.pmachine)
             delete_vmachine_task = hv.delete_vm.s(
                 hv, machine.hypervisorid, None, True)
             delete_vmachine_task()
-            clean_dal = True
-        else:
-            clean_dal = True
 
-        if clean_dal:
-            for disk in machine.vdisks:
-                disk.delete()
-            machine.delete()
-
-        return True
+        for disk in machine.vdisks:
+            disk.delete()
+        machine.delete()
 
     @staticmethod
     @celery.task(name='ovs.machine.delete_from_voldrv')
@@ -275,10 +271,9 @@ class VMachineController(object):
                     vm.status = 'SYNC_NOK'
                 vm.save()
 
-
     @staticmethod
     @celery.task(name='ovs.machine.set_as_template')
-    def set_as_template(machineguid, **kwargs):
+    def set_as_template(machineguid):
         """
         Set a vmachine as template
 
@@ -294,34 +289,17 @@ class VMachineController(object):
         # when clones were made from it.
 
         vmachine = VMachine(machineguid)
-        vmachine.invalidate_dynamics(['snapshots'])
         if vmachine.hypervisor_status == 'RUNNING':
             raise RuntimeError('vMachine {0} may not be running to set it as vTemplate'.format(
                 vmachine.name
             ))
-        tasks = []
 
         for disk in vmachine.vdisks:
-            t = VDiskController.set_as_template.s(diskguid=disk.guid)
-            tasks.append(t)
-        set_as_template_vmachine_wf = group(t for t in tasks)
-        group_result = set_as_template_vmachine_wf()
-        while not group_result.ready():
-            time.sleep(1)
+            VDiskController.set_as_template(diskguid=disk.guid)
 
-        if group_result.successful():
-            group_result.join()
-            for task_result in group_result:
-                if not task_result.successful():
-                    vmachine.is_vtemplate = False
-                    break
-            vmachine.is_vtemplate = True
-        else:
-            vmachine.is_vtemplate = False
-
+        vmachine.is_vtemplate = True
+        vmachine.invalidate_dynamics(['snapshots'])
         vmachine.save()
-
-        return group_result.successful()
 
     @staticmethod
     @celery.task(name='ovs.machine.rollback')
@@ -330,7 +308,6 @@ class VMachineController(object):
         Rolls back a VM based on a given disk snapshot timestamp
         """
         vmachine = VMachine(machineguid)
-        vmachine.invalidate_dynamics(['snapshots'])
         if vmachine.hypervisor_status == 'RUNNING':
             raise RuntimeError('vMachine {0} may not be running to set it as vTemplate'.format(
                 vmachine.name
@@ -339,32 +316,16 @@ class VMachineController(object):
         snapshots = [snap for snap in vmachine.snapshots if snap['timestamp'] == timestamp]
         if not snapshots:
             raise ValueError('No vmachine snapshots found for timestamp {}'.format(timestamp))
-        tasks = []
 
         for disk in vmachine.vdisks:
-            t = VDiskController.rollback.s(diskguid=disk.guid,
-                                           timestamp=timestamp)
-            tasks.append(t)
+            VDiskController.rollback(diskguid=disk.guid,
+                                     timestamp=timestamp)
 
-        rollback_disk_tasks = group(t for t in tasks)
-        group_result = rollback_disk_tasks()
-        while not group_result.ready():
-            time.sleep(1)
         vmachine.invalidate_dynamics(['snapshots'])
-        failed_rollback = []
-        if group_result.successful():
-            disks = group_result.join()
-            return disks
-        else:
-            for task_result in group_result:
-                if not task_result.successful():
-                    failed_rollback.append(task_result)
-            return failed_rollback
-
 
     @staticmethod
     @celery.task(name='ovs.machine.snapshot')
-    def snapshot(machineguid, label=None, is_consistent=False, timestamp=None, subtasks=True):
+    def snapshot(machineguid, label=None, is_consistent=False, timestamp=None):
         """
         Snapshot VMachine disks
 
@@ -383,9 +344,9 @@ class VMachineController(object):
                     'machineguid': machineguid}
         machine = VMachine(machineguid)
 
-        #@todo: we now skip creating a snapshot when a vmachine's disks
-        #       is missing a mandatory property: volumeid
-        #       subtask will now raise an exception earlier in the workflow
+        # @todo: we now skip creating a snapshot when a vmachine's disks
+        #        is missing a mandatory property: volumeid
+        #        subtask will now raise an exception earlier in the workflow
         for disk in machine.vdisks:
             if not disk.volumeid:
                 message = 'Missing volumeid on disk {0} - unable to create snapshot for vm {1}' \
@@ -393,23 +354,23 @@ class VMachineController(object):
                 logging.info('Error: {0}'.format(message))
                 raise RuntimeError(message)
 
-        if subtasks:
-            tasks = []
+        snapshots = {}
+        success = True
+        try:
             for disk in machine.vdisks:
-                snapshotid = str(uuid.uuid4())
-                t = VDiskController.create_snapshot.s(diskguid=disk.guid,
-                                                      metadata=metadata,
-                                                      snapshotid=snapshotid)
-                t.link_error(VDiskController.delete_snapshot.s(diskguid=disk.guid,
-                                                               snapshotid=snapshotid))
-                tasks.append(t)
-            snapshot_vmachine_wf = group(t for t in tasks)
-            snapshot_vmachine_wf()
-        else:
-            for disk in machine.vdisks:
-                VDiskController.create_snapshot(diskguid=disk.guid,
-                                                metadata=metadata)
+                snapshots[disk.guid] = VDiskController.create_snapshot(diskguid=disk.guid,
+                                                                       metadata=metadata)
+        except:
+            success = False
+            for diskguid, snapshotid in snapshots.iteritems():
+                VDiskController.delete_snapshot(diskguid=diskguid,
+                                                snapshotid=snapshotid)
+        logging.info('Create snapshot for vMachine {0}: {1}'.format(
+            machine.name, 'Success' if success else 'Failure'
+        ))
         machine.invalidate_dynamics(['snapshots'])
+        if not success:
+            raise RuntimeError('Failed to snapshot vMachine {0}'.format(machine.name))
 
     @staticmethod
     @celery.task(name='ovs.machine.sync_with_hypervisor')
@@ -417,38 +378,42 @@ class VMachineController(object):
         """
         Updates a given vmachine with data retreived from a given pmachine
         """
-        vmachine = VMachine(vmachineguid)
-        if vmachine.hypervisorid is not None and vmachine.pmachine is not None:
-            # We have received a vmachine which is linked to a pmachine and has a hypervisorid.
-            hypervisor = Factory.get(vmachine.pmachine)
-            logging.info('Syncing vMachine (name {})'.format(vmachine.name))
-            vm_object = hypervisor.get_vm_agnostic_object(vmid=vmachine.hypervisorid)
-        elif vmachine.devicename is not None and vsrid is not None:
-            # We don't have a pmachine or hypervisorid, we need to load the data via the
-            # devicename and vsr.
-            vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-            if vsr is None:
-                raise RuntimeError('VolumeStorageRouter could not be found')
-            vsa = vsr.serving_vmachine
-            if vsa is None:
-                raise RuntimeError('VolumeStorageRouter {} not linked to a VSA'.format(vsr.name))
-            pmachine = vsa.pmachine
-            if pmachine is None:
-                raise RuntimeError('VSA {} not linked to a pMachine'.format(vsa.name))
-            hypervisor = Factory.get(pmachine)
-            vmachine.pmachine = pmachine
-            vmachine.save()
+        try:
+            vmachine = VMachine(vmachineguid)
+            if vsrid is None and vmachine.hypervisorid is not None and vmachine.pmachine is not None:
+                # Only the vmachine was received, so base the sync on hypervisorid and pmachine
+                hypervisor = Factory.get(vmachine.pmachine)
+                logging.info('Syncing vMachine (name {})'.format(vmachine.name))
+                vm_object = hypervisor.get_vm_agnostic_object(vmid=vmachine.hypervisorid)
+            elif vsrid is not None and vmachine.devicename is not None:
+                # VSR id was given, using the devicename instead (to allow hypervisorid updates
+                # which can be caused by re-adding a vm to the inventory
+                vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+                if vsr is None:
+                    raise RuntimeError('VolumeStorageRouter could not be found')
+                vsa = vsr.serving_vmachine
+                if vsa is None:
+                    raise RuntimeError('VolumeStorageRouter {} not linked to a VSA'.format(vsr.name))
+                pmachine = vsa.pmachine
+                if pmachine is None:
+                    raise RuntimeError('VSA {} not linked to a pMachine'.format(vsa.name))
+                hypervisor = Factory.get(pmachine)
+                vmachine.pmachine = pmachine
+                vmachine.save()
 
-            logging.info('Syncing vMachine (device {}, ip {}, mtpt {})'.format(vmachine.devicename,
-                                                                               vsr.ip,
-                                                                               vsr.mountpoint))
-            vm_object = hypervisor.get_vm_object_by_devicename(devicename=vmachine.devicename,
-                                                               ip=vsr.ip,
-                                                               mountpoint=vsr.mountpoint)
-        else:
-            message = 'Not enough information to sync vmachine'
-            logging.info('Error: {0}'.format(message))
-            raise RuntimeError(message)
+                logging.info('Syncing vMachine (device {}, ip {}, mtpt {})'.format(vmachine.devicename,
+                                                                                   vsr.ip,
+                                                                                   vsr.mountpoint))
+                vm_object = hypervisor.get_vm_object_by_devicename(devicename=vmachine.devicename,
+                                                                   ip=vsr.ip,
+                                                                   mountpoint=vsr.mountpoint)
+            else:
+                message = 'Not enough information to sync vmachine'
+                logging.info('Error: {0}'.format(message))
+                raise RuntimeError(message)
+        except Exception as ex:
+            logging.info('Error while fetching vMachine info: {0}'.format(str(ex)))
+            raise
 
         vdisks_synced = 0
         if vm_object is None:
