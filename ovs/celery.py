@@ -8,6 +8,7 @@ import sys
 sys.path.append('/opt/OpenvStorage')
 
 import os
+from kombu import Queue
 from celery import Celery
 from celery.schedules import crontab
 from ovs.logging.logHandler import LogHandler
@@ -18,6 +19,10 @@ memcache_ini = Tools.inifile.open(os.path.join(Configuration.get('ovs.core.cfgdi
 nodes = memcache_ini.getValue('main', 'nodes').split(',')
 memcache_servers = map(lambda m: memcache_ini.getValue(m, 'location'), nodes)
 
+rmq_ini = Tools.inifile.open(os.path.join(Configuration.get('ovs.core.cfgdir'), 'rabbitmqclient.cfg'))
+nodes = rmq_ini.getValue('main', 'nodes').split(',')
+rmq_servers = map(lambda m: rmq_ini.getValue(m, 'location'), nodes)
+
 celery = Celery('ovs',
                 include=['ovs.lib.vdisk',
                          'ovs.lib.vmachine',
@@ -27,12 +32,22 @@ celery = Celery('ovs',
                          'ovs.extensions.hypervisor.hypervisors.vmware'])
 
 celery.conf.CELERY_RESULT_BACKEND = "cache"
-celery.conf.CELERY_CACHE_BACKEND = 'memcached://{}/'.format(';'.join(memcache_servers))
-celery.conf.BROKER_URL = '{}://{}:{}@{}:{}//'.format(Configuration.get('ovs.core.broker.protocol'),
-                                                     Configuration.get('ovs.core.broker.login'),
-                                                     Configuration.get('ovs.core.broker.password'),
-                                                     Configuration.get('ovs.grid.ip'),
-                                                     Configuration.get('ovs.core.broker.port'))
+celery.conf.CELERY_CACHE_BACKEND = 'memcached://{0}/'.format(';'.join(memcache_servers))
+celery.conf.BROKER_URL = ';'.join(['{0}://{1}:{2}@{3}//'.format(Configuration.get('ovs.core.broker.protocol'),
+                                                                Configuration.get('ovs.core.broker.login'),
+                                                                Configuration.get('ovs.core.broker.password'),
+                                                                server)
+                                   for server in rmq_servers])
+celery.conf.CELERY_DEFAULT_QUEUE = 'ovs_generic'
+celery.conf.CELERY_QUEUES = (
+    Queue('ovs_generic', routing_key='generic.#'),
+    Queue('ovs_ovs100', routing_key='vsa.ovs100.#'),
+    Queue('ovs_ovs101', routing_key='vsa.ovs101.#'),
+)
+celery.conf.CELERY_DEFAULT_EXCHANGE = 'generic'
+celery.conf.CELERY_DEFAULT_EXCHANGE_TYPE = 'topic'
+celery.conf.CELERY_DEFAULT_ROUTING_KEY = 'generic.default'
+
 celery.conf.CELERYBEAT_SCHEDULE = {
     # Snapshot policy
     # > Executes every day, hourly between 02:00 and 22:00 hour

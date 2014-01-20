@@ -360,7 +360,8 @@ class VMachineController(object):
             for disk in machine.vdisks:
                 snapshots[disk.guid] = VDiskController.create_snapshot(diskguid=disk.guid,
                                                                        metadata=metadata)
-        except:
+        except Exception as ex:
+            logging.info('Error snapshotting disk {0}: {1}'.format(disk.name, str(ex)))
             success = False
             for diskguid, snapshotid in snapshots.iteritems():
                 VDiskController.delete_snapshot(diskguid=diskguid,
