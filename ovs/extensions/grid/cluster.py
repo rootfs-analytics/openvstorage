@@ -285,6 +285,7 @@ Control.init(\'{}\',{},\'{}\')
           
         if create_filesystems:
             self._create_filesystems()
+        Remote.cuisine.api.run('apt-get update')
         self._install_jscore()
  
         unique_machine_id = Remote.cuisine.api.run('python -c """from JumpScale import j; print j.application.getUniqueMachineId()"""')
@@ -408,7 +409,7 @@ Control.init(\'{}\',{},\'{}\')
                                   "vrouter_write_threshold" : 1024,
                                   "host": remote_ip,
                                   "xmlrpc_port": 12323}
-                vsr_configuration.configure_volumerouter(vpool_name, vrouter_config)
+                vsr_configuration.configure_volumerouter(vpool_name, vrouter_config, local=False)
                 shutil.copyfile(os.path.join(Configuration.get('ovs.core.cfgdir'), '{}.json'.format(vpool)), os.path.join(self.node_cfg_dir, '{}.json'.format(vpool)))
                 configs_to_push.append('{}.json'.format(vpool))
 
@@ -444,6 +445,9 @@ Control.init(\'{}\',{},\'{}\')
         """
         self.control._start_package('openvstorage-core')
         self._remote_control_init(vpool, services=['openvstorage-core'], master=socket.gethostname())
+        
+        #@todo Configure volumerouter cluster in arakoon
+        
         self.control._start_package('openvstorage-webapps')
         self._remote_control_init(vpool, services=['openvstorage-webapps'], master=socket.gethostname())
         #self.control.init(vpool_name, services=['volumedriver',])

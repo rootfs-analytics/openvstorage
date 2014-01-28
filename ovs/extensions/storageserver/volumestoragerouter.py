@@ -159,7 +159,7 @@ class VolumeStorageRouterConfiguration(object):
             self._config_file_content['filesystem'][key] = value
         self.write_config()
 
-    def configure_volumerouter(self, vrouter_cluster, vrouter_config):
+    def configure_volumerouter(self, vrouter_cluster, vrouter_config, local=True):
         """
         Configures volume storage router
         @param vrouter_config: dictionary of key/value pairs
@@ -173,7 +173,8 @@ class VolumeStorageRouterConfiguration(object):
         self._config_file_content['volume_router']['vrouter_arakoon_cluster_nodes'] = []
         if not 'volume_router_cluster' in self._config_file_content:
             self._config_file_content['volume_router_cluster'] = {}
-        self._config_file_content['volume_router_cluster'].update({'vrouter_cluster_id': vrouter_cluster})
+        if local:
+            self._config_file_content['volume_router_cluster'].update({'vrouter_cluster_id': vrouter_cluster})
         if 'vrouter_cluster_nodes' in self._config_file_content['volume_router_cluster']:
             for node in self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes']:
                 if node['vrouter_id'] == vrouter_config['vrouter_id'] or \

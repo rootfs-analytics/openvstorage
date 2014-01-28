@@ -185,8 +185,7 @@ class Configure():
         volumedriver_backend_type = Configuration.get('volumedriver.backend.type', checkExists=True)
         if not volumedriver_backend_type:
             volumedriver_backend_type = Console.askChoice(supported_backends, 'Select type of storage backend')
-        uuid_nodeid = '%x' % uuid.getnode()
-        machine_id = uuid_nodeid.zfill(12)
+        machine_id = sorted(subprocess.check_output("ip a | grep link/ether | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | sed 's/://g'", shell=True).strip().split('\n'))[0]
         vrouter_id = '{}{}'.format(vpool_name, machine_id)
         connection_host = Configuration.get('volumedriver.connection.host', checkExists=True)
         connection_port = Configuration.get('volumedriver.connection.port', checkExists=True)
@@ -405,6 +404,7 @@ class Control():
         if 'volumedriver' in services:
             _init_volumedriver()
             subprocess.call(['service', 'processmanager', 'start'])
+            #@todo Restart ovs workers at end of init to get the correct queues defined.
 
     def _package_is_running(self, package):
         """
