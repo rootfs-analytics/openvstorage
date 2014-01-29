@@ -49,7 +49,7 @@ class VPoolController(object):
         for vsr in vpool.vsrs:
             pmachine = vsr.serving_vmachine.pmachine
             hypervisor = Factory.get(pmachine)
-            for vm_object in hypervisor.get_vms_by_nfs_mountinfo(vsr.ip, vsr.mountpoint):
+            for vm_object in hypervisor.get_vms_by_nfs_mountinfo(vsr.storage_ip, vsr.mountpoint):
                 vmachine = VMachineList.get_by_devicename_and_vpool(
                     devicename=vm_object['backing']['filename'],
                     vpool=vpool

@@ -112,3 +112,9 @@ class Injector(object):
         """ Injects the Process module """
         _ = provider
         return j.system.process
+
+    @staticmethod
+    def inject_net(provider):
+        """ Injects the Net module """
+        _ = provider
+        return j.system.net

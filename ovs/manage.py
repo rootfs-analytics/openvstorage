@@ -26,6 +26,7 @@ from ovs.plugin.provider.configuration import Configuration
 from ovs.plugin.provider.console import Console
 from ovs.plugin.provider.service import Service
 from ovs.plugin.provider.package import Package
+from ovs.plugin.provider.net import Net
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.vpool import VPool
@@ -36,7 +37,40 @@ from ovs.dal.lists.vpoollist import VPoolList
 from ovs.extensions.hypervisor.factory import Factory
 from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagement
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterConfiguration
+from ovs.extensions.fs.fstab import Fstab
 
+def boxed_message(lines, character='+', maxlength=60):
+    """
+    Embeds a set of lines into a box
+    """
+    character = str(character)  # This must be a string
+    corrected_lines = []
+    for line in lines:
+        if len(line) > maxlength:
+            linepart = ''
+            for word in line.split(' '):
+                if len(linepart + ' ' + word) <= maxlength:
+                    linepart += word + ' '
+                elif len(word) >= maxlength:
+                    if len(linepart) > 0:
+                        corrected_lines.append(linepart.strip())
+                        linepart = ''
+                    corrected_lines.append(word.strip())
+                else:
+                    if len(linepart) > 0:
+                        corrected_lines.append(linepart.strip())
+                    linepart = word + ' '
+            if len(linepart) > 0:
+                corrected_lines.append(linepart.strip())
+        else:
+            corrected_lines.append(line)
+    maxlen = len(max(corrected_lines, key=len))
+    newlines = [character * (maxlen + 10)]
+    for line in corrected_lines:
+        newlines.append('{0}  {1}{2}  {3}'.format(character * 3, line, ' ' * (maxlen - len(line)),
+                                                  character * 3))
+    newlines.append(character * (maxlen + 10))
+    return '\n'.join(newlines)
 
 class Configure():
     """
@@ -137,6 +171,28 @@ class Configure():
             os.remove('/etc/nginx/sites-enabled/default')
 
     @staticmethod
+    def _get_filesystems():
+        try:
+            output = subprocess.check_output(['mount', '-v']).splitlines()
+        except subprocess.CalledProcessError:
+            output = []
+        all_mounts = map(lambda m: m.split()[2], output)
+        mount_regex = re.compile('^/$|/dev|/sys|/run|/proc|{}|{}'.format(Configuration.get('ovs.core.db.mountpoint'),
+                                                                            Configuration.get('volumedriver.metadata')))
+        filesystems = filter(lambda d: not mount_regex.match(d), all_mounts)
+        return filesystems
+
+    @staticmethod
+    def _check_ceph():
+        ceph_config_dir = os.path.join(os.sep, 'etc', 'ceph')
+        if not os.path.exists(ceph_config_dir) or \
+           not os.path.exists(os.path.join(ceph_config_dir, 'ceph.conf')) or \
+           not os.path.exists(os.path.join(ceph_config_dir, 'ceph.keyring')):
+            return False
+        os.chmod(os.path.join(ceph_config_dir, 'ceph.keyring'), 0644)
+        return True
+
+    @staticmethod
     def init_storagerouter(vmachineguid, vpool_name):
         """
         Initializes the volume storage router.
@@ -147,15 +203,7 @@ class Configure():
         for path in mountpoints:
             if not os.path.exists(path) or not os.path.ismount(path):
                 raise ValueError('Path to {} does not exist or is not a mountpoint'.format(path))
-        try:
-            output = subprocess.check_output(['mount', '-v']).splitlines()
-        except subprocess.CalledProcessError:
-            output = []
-        all_mounts = map(lambda m: m.split()[2], output)
-        mount_regex = re.compile('^/$|/dev|/sys|/run|/proc|{}|{}|{}'.format(Configuration.get('ovs.core.db.mountpoint'),
-                                                                            Configuration.get('volumedriver.filesystem.distributed'),
-                                                                            Configuration.get('volumedriver.metadata')))
-        filesystems = filter(lambda d: not mount_regex.match(d), all_mounts)
+        filesystems = _get_filesystems()
         volumedriver_cache_mountpoint = Configuration.get('volumedriver.cache.mountpoint', checkExists=True)
         if not volumedriver_cache_mountpoint:
             volumedriver_cache_mountpoint = Console.askChoice(filesystems, 'Select cache mountpoint')
@@ -169,7 +217,6 @@ class Configure():
         dirs2create = [scocache,
                        failovercache,
                        Configuration.get('volumedriver.readcache.serialization.path'),
-                       Configuration.get('volumedriver.filesystem.cache'),
                        metadatapath,
                        tlogpath]
         files2create = [readcache]
@@ -193,6 +240,18 @@ class Configure():
         connection_password = Configuration.get('volumedriver.connection.password', checkExists=True)
         rest_connection_timeout_secs = Configuration.get('volumedriver.rest.timeout', checkExists=True)
         volumedriver_local_filesystem = Configuration.get('volumedriver.backend.mountpoint', checkExists=True)
+        distributed_filesystem_mountpoint = Configuration.get('volumedriver.filesystem.distributed', checkExists=True)
+        volumedriver_storageip = Configuration.get('volumedriver.ip.storage', checkExists=True)
+        if not volumedriver_storageip:
+            ipaddresses = Net.getIpAddresses()
+            grid_ip = Configuration.get('ovs.grid.ip')
+            if grid_ip in ipaddresses: ipaddresses.remove(grid_ip)
+            if '127.0.0.1' in ipaddresses: ipaddresses.remove(grid_ip)
+            if not ipaddresses:
+                raise RuntimeError('No available ip addresses found suitable for volumerouter storage ip')
+            volumedriver_storageip = Console.askChoice(ipaddresses, 'Select storage ip address for this vpool')
+            openvstorage_core_hrd = Configuration.getHRD(os.path.join(Configuration.get('jumpscale.paths.base'), 'cfg', 'hrd', 'openvstorage-core.hrd'))
+            openvstorage_core_hrd.set('volumedriver.ip.storage', volumedriver_storageip)
         backend_config = {}
         if volumedriver_backend_type == 'LOCAL':
             if not volumedriver_local_filesystem:
@@ -224,6 +283,30 @@ class Configure():
                               's3_connection_username': connection_username,
                               's3_connection_password': connection_password,
                               's3_connection_verbose_logging': 1}
+            #Create local backend filesystem
+            if distributed_filesystem_mountpoint in filesystems:
+                subprocess.call(['umount', distributed_filesystem_mountpoint])
+            ceph_ok = check_ceph()
+            if not ceph_ok:
+                print boxed_message(['No or incomplete configuration files found for your Ceph S3 compatible storage backend',
+                                     'Now is the time to copy following files',
+                                     '   CEPH_SERVER:/etc/ceph/ceph.conf -> /etc/ceph/ceph.conf',
+                                     '   CEPH_SERVER:/etc/ceph/ceph.client.admin.keyring -> /etc/ceph/ceph.keyring',
+                                     'to make sure we can connect our ceph filesystem',
+                                     'When done continue the initialization here'])
+                ceph_continue = Console.askYesNo('Continue initialization')
+                if not ceph_continue:
+                    print "Exiting initialization"
+                    exit()
+                ceph_ok = check_ceph()
+                if not ceph_ok:
+                    print "Ceph config still not ok, exiting initialization"
+                    exit()
+            subprocess.call(['ceph-fuse', '-m', '{}:6789'.format(connection_host), distributed_filesystem_mountpoint])
+            fstab = Fstab()
+            fstab.removeConfigByDirectory(distributed_filesystem_mountpoint)
+            fstab.addConfig('id=admin,conf=/etc/ceph/ceph.conf', distributed_filesystem_mountpoint, 'fuse.ceph', 'defaults,noatime', '0', '2')
+            subprocess.call(['mount', distributed_filesystem_mountpoint])
         backend_config.update({'backend_type': volumedriver_backend_type})
         vsr_configuration = VolumeStorageRouterConfiguration(vpool_name)
         vsr_configuration.configure_backend(backend_config)
@@ -276,7 +359,8 @@ class Configure():
         vrouter.name = vrouter_id.replace('_', ' ')
         vrouter.description = vrouter.name
         vrouter.vsrid = vrouter_id
-        vrouter.ip = Configuration.get('ovs.grid.ip')
+        vrouter.storage_ip = volumedriver_storageip
+        vrouter.cluster_ip = Configuration.get('ovs.grid.ip')
         vrouter.port = vrouter_port
         vrouter.mountpoint = os.path.join(os.sep, 'mnt', vpool_name)
         vrouter.serving_vmachine = this_vmachine
@@ -288,7 +372,7 @@ class Configure():
                           "vrouter_redirect_timeout_ms": "5000",
                           "vrouter_migrate_timeout_ms" : "5000",
                           "vrouter_write_threshold" : 1024,
-                          "host": vrouter.ip,
+                          "host": vrouter.cluster_ip,
                           "xmlrpc_port": vrouter.port}
         vsr_configuration.configure_volumerouter(vpool_name, vrouter_config)
 

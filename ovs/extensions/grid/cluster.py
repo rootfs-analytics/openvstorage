@@ -253,6 +253,7 @@ Control.init(\'{}\',{},\'{}\')
         @param seedpasswd: current password of the new node
         """
         configs_to_push = ['memcacheclient.cfg', 'rabbitmqclient.cfg']
+        local_configs_to_push = []
         Remote.cuisine.fabric.env["password"]=passwd
         self.cuapi.connect(remote_ip)
         vpool_cache_mountpoint = Console.askString('Specify vpool cache mountpoint','/mnt/cache')
@@ -328,7 +329,7 @@ Control.init(\'{}\',{},\'{}\')
         node_openvstorage_hrd.set('volumedriver.rest.timeout', rest_connection_timeout_secs)
         node_openvstorage_hrd.set('volumedriver.backend.mountpoint', volumedriver_local_filesystem)
         node_openvstorage_hrd.set('volumedriver.vpool.mount', mount_vpool)
-        
+        node_openvstorage_hrd.set('volumedriver.ip.storage', Configuration.get('volumedriver.ip.storage'))
         """
         Build new grid configuration for arakoon
         """
@@ -402,6 +403,7 @@ Control.init(\'{}\',{},\'{}\')
         for vpool_name in existing_vpools:
             vsr_configuration = VolumeStorageRouterConfiguration(vpool_name)
             vsr_configuration.configure_arakoon_cluster(voldrv_arakoon_cluster_id, voldrv_arakoon_client_config)
+            local_vrouter_config = dict(vsr_configuration._config_file_content['volume_router'])
             if vpool_name == vpool:
                 vrouter_config = {"vrouter_id": '{}{}'.format(vpool_name, unique_machine_id),
                                   "vrouter_redirect_timeout_ms": "5000",
@@ -409,9 +411,14 @@ Control.init(\'{}\',{},\'{}\')
                                   "vrouter_write_threshold" : 1024,
                                   "host": remote_ip,
                                   "xmlrpc_port": 12323}
-                vsr_configuration.configure_volumerouter(vpool_name, vrouter_config, local=False)
+                vsr_configuration.configure_volumerouter(vpool_name, vrouter_config)
                 shutil.copyfile(os.path.join(Configuration.get('ovs.core.cfgdir'), '{}.json'.format(vpool)), os.path.join(self.node_cfg_dir, '{}.json'.format(vpool)))
-                configs_to_push.append('{}.json'.format(vpool))
+                vsr_configuration.configure_volumerouter(vpool_name, local_vrouter_config, update_cluster=False)
+                local_configs_to_push.append('{}.json'.format(vpool))
+                self.cuapi.dir_ensure("/etc/ceph")
+                self.cuapi.file_upload("/etc/ceph/ceph.conf","/etc/ceph/ceph.conf")
+                self.cuapi.file_upload("/etc/ceph/ceph.keyring", "/etc/ceph/ceph.keyring")
+                self.cuapi.file_attribs("/etc/ceph/ceph.keyring", mode=644)
 
         """
         Update new and local node with new config
@@ -421,6 +428,7 @@ Control.init(\'{}\',{},\'{}\')
         """
         self._push_hrds()
         self._push_config(configs=configs_to_push, node_config_dir=self.node_cfg_dir, update_local=True)
+        self._push_config(configs=local_configs_to_push, node_config_dir=self.node_cfg_dir, update_local=False)
 
         """
         Update the local and remote hosts file.

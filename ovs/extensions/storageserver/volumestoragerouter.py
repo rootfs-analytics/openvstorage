@@ -163,7 +163,7 @@ class VolumeStorageRouterConfiguration(object):
             self._config_file_content['filesystem'][key] = value
         self.write_config()
 
-    def configure_volumerouter(self, vrouter_cluster, vrouter_config, local=True):
+    def configure_volumerouter(self, vrouter_cluster, vrouter_config, update_cluster=True):
         """
         Configures volume storage router
         @param vrouter_config: dictionary of key/value pairs
@@ -175,24 +175,24 @@ class VolumeStorageRouterConfiguration(object):
         # Configure the vrouter arakoon with empty values in order to use tokyo cabinet
         self._config_file_content['volume_router']['vrouter_arakoon_cluster_id'] = ''
         self._config_file_content['volume_router']['vrouter_arakoon_cluster_nodes'] = []
-        if not 'volume_router_cluster' in self._config_file_content:
-            self._config_file_content['volume_router_cluster'] = {}
-        if local:
+        if update_cluster:
+            if not 'volume_router_cluster' in self._config_file_content:
+                self._config_file_content['volume_router_cluster'] = {}
             self._config_file_content['volume_router_cluster'].update({'vrouter_cluster_id': vrouter_cluster})
-        if 'vrouter_cluster_nodes' in self._config_file_content['volume_router_cluster']:
-            for node in self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes']:
-                if node['vrouter_id'] == vrouter_config['vrouter_id'] or \
-                        node['host'] == '127.0.0.1':
-                    self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'].remove(node)
-                    break
-        else:
-            self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'] = []
-        new_node = {'vrouter_id': vrouter_config['vrouter_id'],
-                    'host': vrouter_config['host'],
-                    'message_port': int(vrouter_config['xmlrpc_port']) - 1,
-                    'xmlrpc_port': vrouter_config['xmlrpc_port'],
-                    'failovercache_port': int(vrouter_config['xmlrpc_port']) + 1}
-        self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'].append(new_node)
+            if 'vrouter_cluster_nodes' in self._config_file_content['volume_router_cluster']:
+                for node in self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes']:
+                    if node['vrouter_id'] == vrouter_config['vrouter_id'] or \
+                            node['host'] == '127.0.0.1':
+                        self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'].remove(node)
+                        break
+            else:
+                self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'] = []
+            new_node = {'vrouter_id': vrouter_config['vrouter_id'],
+                        'host': vrouter_config['host'],
+                        'message_port': int(vrouter_config['xmlrpc_port']) - 1,
+                        'xmlrpc_port': vrouter_config['xmlrpc_port'],
+                        'failovercache_port': int(vrouter_config['xmlrpc_port']) + 1}
+            self._config_file_content['volume_router_cluster']['vrouter_cluster_nodes'].append(new_node)
         self.write_config()
 
     def configure_arakoon_cluster(self, arakoon_cluster_id, arakoon_nodes):

@@ -92,9 +92,9 @@ class VMachineController(object):
 
         source_hv = Factory.get(template_vm.pmachine)
         target_hv = Factory.get(target_pm)
-        if not source_hv.is_datastore_available(source_vsr.ip, source_vsr.mountpoint):
+        if not source_hv.is_datastore_available(source_vsr.storage_ip, source_vsr.mountpoint):
             raise RuntimeError('Datastore unavailable on source hypervisor')
-        if not target_hv.is_datastore_available(target_vsr.ip, target_vsr.mountpoint):
+        if not target_hv.is_datastore_available(target_vsr.storage_ip, target_vsr.mountpoint):
             raise RuntimeError('Datastore unavailable on target hypervisor')
 
         source_vm = source_hv.get_vm_object(template_vm.hypervisorid)
@@ -136,7 +136,7 @@ class VMachineController(object):
 
         try:
             result = target_hv.create_vm_from_template(
-                name, source_vm, disks, target_vsr.ip, target_vsr.mountpoint,
+                name, source_vm, disks, target_vsr.storage_ip, target_vsr.mountpoint,
                 esxhost=None, wait=True
             )
         except:
@@ -417,10 +417,10 @@ class VMachineController(object):
                 vmachine.save()
 
                 logging.info('Syncing vMachine (device {}, ip {}, mtpt {})'.format(vmachine.devicename,
-                                                                                   vsr.ip,
+                                                                                   vsr.storage_ip,
                                                                                    vsr.mountpoint))
                 vm_object = hypervisor.get_vm_object_by_devicename(devicename=vmachine.devicename,
-                                                                   ip=vsr.ip,
+                                                                   ip=vsr.storage_ip,
                                                                    mountpoint=vsr.mountpoint)
             else:
                 message = 'Not enough information to sync vmachine'
@@ -462,7 +462,7 @@ class VMachineController(object):
             vmachine.save()
             # Updating and linking disks
             vsrs = VolumeStorageRouterList.get_volumestoragerouters()
-            datastores = dict([('{}:{}'.format(vsr.ip, vsr.mountpoint), vsr) for vsr in vsrs])
+            datastores = dict([('{}:{}'.format(vsr.storage_ip, vsr.mountpoint), vsr) for vsr in vsrs])
             vdisk_guids = []
             for disk in vm_object['disks']:
                 datastore = vm_object['datastores'][disk['datastore']]
