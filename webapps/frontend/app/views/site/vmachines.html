@@ -15,8 +15,8 @@ limitations under the License.
 -->
 <section>
     <h2 data-i18n="ovs:vmachines.title"></h2>
-    <div data-bind="pager: { items: vMachines, headers: vMachineHeaders, pagesize: 10, key: 'guid', initialLoad: vMachinesInitialLoad,
-                             enterViewport: loadVMachine, viewportRefresh: 5000, controls: true }">
+    <div data-bind="pager: { items: vMachines, headers: vMachineHeaders, kinitialLoad: vMachinesInitialLoad,
+                             viewportRefresh: refreshVMachines, viewportRefreshInterval: 5000, controls: true }">
         <table data-dummy="dummy">
             <tr data-part="vitem" data-bind="attr: { id: 'vmachine_' + guid() }">
                 <td>
@@ -24,20 +24,20 @@ limitations under the License.
                        class="fa fa-spin" data-i18n="[html]ovs:icons.loading"></i>
                     <span data-bind="text: name"></span>
                 </td>
-                <td data-bind="lazylist: { items: vpools, loadedObservable: 'loaded' }">
+                <td data-bind="lazylist: { items: vPools, loadedObservable: 'loaded' }">
                     <a data-part="entry"
                        data-bind="text: name,
                                   attr: { href: $root.shared.routing.loadHash('vpool-detail', { guid: guid }) }"></a>
                 </td>
-                <td data-bind="lazylist: { items: vsas, loadedObservable: 'loaded' }">
+                <td data-bind="lazylist: { items: vSAs, loadedObservable: 'loaded' }">
                     <span data-part="entry" data-bind="text: name"></span>
                 </td>
                 <td><span data-bind="text: vDisks().length"></span></td>
                 <td><span data-bind="text: storedData"></span></td>
                 <td><span data-bind="text: cacheRatio"></span></td>
-                <td data-bind="lazyloader: { item: iops }"></td>
-                <td data-bind="lazyloader: { item: readSpeed }"></td>
-                <td data-bind="lazyloader: { item: writeSpeed }"></td>
+                <td><span data-bind="text: iops"></span></td>
+                <td><span data-bind="text: readSpeed"></span></td>
+                <td><span data-bind="text: writeSpeed"></span></td>
                 <td>
                     <span data-bind="status: {
                                          colors: {

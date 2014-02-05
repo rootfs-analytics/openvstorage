@@ -24,8 +24,9 @@ from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.dal.hybrids.vdisk import VDisk
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.lib.vdisk import VDiskController
-from backend.serializers.serializers import SimpleSerializer, FullSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose, validate
+from backend.toolbox import Toolbox
 
 
 class VDiskViewSet(viewsets.ViewSet):
@@ -41,34 +42,19 @@ class VDiskViewSet(viewsets.ViewSet):
         Overview of all vDisks
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            reduced = False
-            serializer = FullSerializer
-        else:
-            reduced = True
-            serializer = SimpleSerializer
         vmachineguid = request.QUERY_PARAMS.get('vmachineguid', None)
         if vmachineguid is None:
-            if reduced:
-                vdisks = VDiskList.get_vdisks().reduced
-            else:
-                vdisks = VDiskList.get_vdisks()
+            vdisks = VDiskList.get_vdisks()
         else:
             vmachine = VMachine(vmachineguid)
             if vmachine.is_internal:
                 vdisks = []
                 for vsr in vmachine.served_vsrs:
-                    if reduced:
-                        vdisks += vsr.vpool.vdisks.reduced
-                    else:
-                        vdisks += vsr.vpool.vdisks
+                    vdisks += vsr.vpool.vdisks
             else:
-                if reduced:
-                    vdisks = vmachine.vdisks.reduced
-                else:
-                    vdisks = vmachine.vdisks
-        serialized = serializer(VDisk, instance=vdisks, many=True)
+                vdisks = vmachine.vdisks
+        vdisks, serializer, contents = Toolbox.handle_list(vdisks, request)
+        serialized = serializer(VDisk, contents=contents, instance=vdisks, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
     @expose(internal=True, customer=True)
@@ -80,21 +66,6 @@ class VDiskViewSet(viewsets.ViewSet):
         """
         _ = request
         return Response(FullSerializer(VDisk, instance=obj).data, status=status.HTTP_200_OK)
-
-    @link()
-    @expose(internal=True, customer=True)
-    @required_roles(['view'])
-    @validate(VDisk)
-    def get_vsa(self, request, obj):
-        """
-        Returns the guid of the VSA serving the vDisk
-        """
-        _ = request
-        vsa_vmachine_guid = None
-        if obj.vsrid:
-            vsr = VolumeStorageRouterList.get_by_vsrid(obj.vsrid)
-            vsa_vmachine_guid = vsr.serving_vmachine.guid
-        return Response(vsa_vmachine_guid, status=status.HTTP_200_OK)
 
     @action()
     @expose(internal=True, customer=True)

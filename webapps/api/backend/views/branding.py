@@ -19,8 +19,9 @@ from rest_framework import status, viewsets
 from rest_framework.response import Response
 from ovs.dal.lists.brandinglist import BrandingList
 from ovs.dal.hybrids.branding import Branding
-from backend.serializers.serializers import FullSerializer, SimpleSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import expose, validate
+from backend.toolbox import Toolbox
 
 
 class BrandingViewSet(viewsets.ViewSet):
@@ -34,13 +35,8 @@ class BrandingViewSet(viewsets.ViewSet):
         Overview of all brandings
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            brands = BrandingList.get_brandings()
-            serializer = FullSerializer
-        else:
-            brands = BrandingList.get_brandings().reduced
-            serializer = SimpleSerializer
+        brands = BrandingList.get_brandings()
+        pmachines, serializer, contents = Toolbox.handle_list(brands, request)
         serialized = serializer(Branding, instance=brands, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 

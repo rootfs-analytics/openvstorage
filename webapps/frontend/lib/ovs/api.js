@@ -33,9 +33,11 @@ define([
             type: type,
             timeout: 1000 * 60 * 60,
             contentType: 'application/json',
-            data: JSON.stringify(data),
             headers: { }
         };
+        if (type !== 'GET' || !$.isEmptyObject(data)) {
+            callData.data = JSON.stringify(data);
+        }
         cookie = generic.getCookie('csrftoken');
         if (cookie !== undefined) {
             callData.headers['X-CSRFToken'] = cookie;

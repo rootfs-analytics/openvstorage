@@ -939,3 +939,36 @@ class Basic(TestCase):
         disk.save()
         disk.delete()
         self.assertRaises(ObjectNotFoundException, disk.save, 'Cannot resave a deleted object')
+
+    def test_dol_advanced(self):
+        """
+        Validates the DataObjectList advanced functions (indexer, sort)
+        """
+        sizes = [7, 2, 0, 4, 6, 1, 5, 9, 3, 8]
+        guids = []
+        for i in xrange(0, 10):
+            disk = TestDisk()
+            disk.name = 'disk_%d' % i
+            disk.size = sizes[i]
+            disk.save()
+            guids.append(disk.guid)
+        data = DataList({'object': TestDisk,
+                         'data': DataList.select.DESCRIPTOR,
+                         'query': {'type': DataList.where_operator.AND,
+                                   'items': []}}).data
+        disks = DataObjectList(data, TestDisk)
+        disks.sort()
+        guids.sort()
+        self.assertEqual(disks[0].guid, guids[0], 'Disks should be sorted on guid')
+        self.assertEqual(disks[4].guid, guids[4], 'Disks should be sorted on guid')
+        disks.sort(cmp=lambda a, b: a.size - b.size)
+        self.assertEqual(disks[0].size, 0, 'Disks should be sorted on size')
+        self.assertEqual(disks[4].size, 4, 'Disks should be sorted on size')
+        disks.sort(key=lambda a: a.name)
+        self.assertEqual(disks[0].name, 'disk_0', 'Disks should be sorted on name')
+        self.assertEqual(disks[4].name, 'disk_4', 'Disks should be sorted on name')
+        filtered = disks[1:4]
+        self.assertEqual(filtered[0].name, 'disk_1', 'Disks should be properly sliced')
+        self.assertEqual(filtered[2].name, 'disk_3', 'Disks should be properly sliced')
+        for disk in disks:
+            disk.delete()

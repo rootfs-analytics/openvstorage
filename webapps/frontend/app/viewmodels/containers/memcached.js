@@ -13,9 +13,9 @@
 // limitations under the License.
 /*global define */
 define([
-    'knockout',
+    'jquery', 'knockout',
     'ovs/generic', 'ovs/api'
-], function(ko, generic, api) {
+], function($, ko, generic, api) {
     "use strict";
     return function() {
         var self = this;
@@ -49,15 +49,13 @@ define([
             if (generic.xhrCompleted(self.refreshHandle)) {
                 self.refreshHandle = api.get('statistics/memcache')
                     .done(function(data) {
-                        var i, j;
-                        for (i = 0; i < data.nodes.length; i += 1) {
-                            var node = data.nodes[i], node_info = undefined, add = false;
-                            for (j = 0; j < self.nodes().length; j += 1) {
-                                if (self.nodes()[j].node() === node.node) {
-                                    node_info = self.nodes()[j];
-                                    break;
+                        $.each(data.nodes, function(index, node) {
+                            var node_info, add = false, rawString = '', attribute;
+                            $.each(self.nodes(), function(oindex, onode) {
+                                if (onode.node() === node.node) {
+                                    node_info = onode;
                                 }
-                            }
+                            });
                             if (node_info === undefined) {
                                 node_info = {
                                     node         : ko.observable(''),
@@ -85,7 +83,6 @@ define([
                             node_info.bytesWritten(generic.formatBytes(node.bytes_written));
                             node_info.uptime(node.uptime);
 
-                            var rawString = '', attribute;
                             for (attribute in node) {
                                 if (node.hasOwnProperty(attribute)) {
                                     rawString += generic.padRight(attribute, ' ', 25) + node[attribute].toString() + '\n';
@@ -96,7 +93,7 @@ define([
                             if (add) {
                                 self.nodes.push(node_info);
                             }
-                        }
+                        });
 
                         self.ovsDRhit(data.dal.descriptor_hit);
                         self.ovsDRtot(data.dal.descriptor_hit + data.dal.descriptor_miss);

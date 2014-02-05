@@ -36,8 +36,13 @@ class DataObjectList(object):
         self._objects = {}
         self._reduced = reduced
         self._query_result = query_result
-        if not reduced:
-            self.reduced = DataObjectList(query_result, cls, reduced=True)
+
+    @property
+    def reduced(self):
+        if not self._reduced:
+            dataobjectlist = DataObjectList(self._query_result, self.type, reduced=True)
+            dataobjectlist._guids = self._guids  # Keep sorting
+            return dataobjectlist
 
     def merge(self, query_result):
         """
@@ -91,13 +96,27 @@ class DataObjectList(object):
         Sorts the list with a given set of parameters.
         However, the sorting will be applied to the guids only
         """
-        self._guids.sort(**kwargs)
+        if len(kwargs) == 0:
+            self._guids.sort()
+        else:
+            self.load()
+            objects = self._objects.values()
+            objects.sort(**kwargs)
+            self._guids = [obj.guid for obj in objects]
 
     def reverse(self):
         """
         Reverses the list
         """
         self._guids.reverse()
+
+    def load(self):
+        """
+        Loads all objects (to use on e.g. sorting)
+        """
+        for guid in self._guids:
+            if guid not in self._objects:
+                self._get_object(guid)
 
     def iterloaded(self):
         """
@@ -154,5 +173,16 @@ class DataObjectList(object):
         """
         Provide indexer behavior to the list
         """
-        guid = self._guids[item]
-        return self._get_object(guid)
+        if isinstance(item, slice):
+            guids = self._guids[item.start:item.stop]
+            result = [item for item in self._query_result if item['guid'] in guids]
+            data_object_list = DataObjectList(result, self.type)
+            # Overwrite some internal fields, making sure we keep already fetched objects
+            # and we preseve existing sorting
+            data_object_list._objects = dict(item for item in self._objects.iteritems()
+                                             if item[0] in guids)
+            data_object_list._guids = guids
+            return data_object_list
+        else:
+            guid = self._guids[item]
+            return self._get_object(guid)

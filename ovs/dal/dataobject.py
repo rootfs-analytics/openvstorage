@@ -172,7 +172,7 @@ class DataObject(object):
 
         # Add properties where appropriate, hooking in the correct dictionary
         for attribute, default in self._blueprint.iteritems():
-            self._add_sproperty(attribute, self._data[attribute])
+            self._add_blueprint_property(attribute, self._data[attribute])
 
         # Load relations
         for attribute, relation in self._relations.iteritems():
@@ -182,11 +182,11 @@ class DataObject(object):
                 else:
                     cls = relation[0]
                 self._data[attribute] = Descriptor(cls).descriptor
-            self._add_cproperty(attribute, self._data[attribute])
+            self._add_relation_property(attribute, self._data[attribute])
 
         # Add wrapped properties
         for attribute, expiry in self._expiry.iteritems():
-            self._add_dproperty(attribute)
+            self._add_dynamic_property(attribute)
 
         # Load foreign keys
         relations = RelationMapper.load_foreign_relations(self.__class__)
@@ -194,7 +194,7 @@ class DataObject(object):
             for key, info in relations.iteritems():
                 self._objects[key] = {'info': info,
                                       'data': None}
-                self._add_lproperty(key)
+                self._add_list_property(key)
 
         # Store original data
         self._original = copy.deepcopy(self._data)
@@ -215,56 +215,58 @@ class DataObject(object):
     ## Helper methods for dynamic getting and setting
     #######################
 
-    def _add_sproperty(self, attribute, value):
+    def _add_blueprint_property(self, attribute, value):
         """
         Adds a simple property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_sproperty(attribute)
-        fset = lambda s, v: s._set_sproperty(attribute, v)
+        fget = lambda s: s._get_blueprint_property(attribute)
+        fset = lambda s, v: s._set_blueprint_property(attribute, v)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget, fset))
         self._data[attribute] = value
 
-    def _add_cproperty(self, attribute, value):
+    def _add_relation_property(self, attribute, value):
         """
         Adds a complex property to the object (hybrids)
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_cproperty(attribute)
-        fset = lambda s, v: s._set_cproperty(attribute, v)
-        gget = lambda s: s._get_gproperty(attribute)
+        fget = lambda s: s._get_relation_property(attribute)
+        fset = lambda s, v: s._set_relation_property(attribute, v)
+        gget = lambda s: s._get_guid_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget, fset))
         setattr(self.__class__, '%s_guid' % attribute, property(gget))
         self._data[attribute] = value
 
-    def _add_lproperty(self, attribute):
+    def _add_list_property(self, attribute):
         """
         Adds a list (readonly) property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_lproperty(attribute)
+        fget = lambda s: s._get_list_property(attribute)
+        gget = lambda s: s._get_list_guid_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget))
+        setattr(self.__class__, '%s_guids' % attribute, property(gget))
 
-    def _add_dproperty(self, attribute):
+    def _add_dynamic_property(self, attribute):
         """
         Adds a dynamic property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_dproperty(attribute)
+        fget = lambda s: s._get_dynamic_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget))
 
     # Helper method spporting property fetching
-    def _get_sproperty(self, attribute):
+    def _get_blueprint_property(self, attribute):
         """
         Getter for a simple property
         """
         return self._data[attribute]
 
-    def _get_cproperty(self, attribute):
+    def _get_relation_property(self, attribute):
         """
         Getter for a complex property (hybrid)
         It will only load the object once and caches it for the lifetime of this object
@@ -274,13 +276,13 @@ class DataObject(object):
             self._objects[attribute] = descriptor.get_object(instantiate=True)
         return self._objects[attribute]
 
-    def _get_gproperty(self, attribute):
+    def _get_guid_property(self, attribute):
         """
         Getter for a foreign key property
         """
         return self._data[attribute]['guid']
 
-    def _get_lproperty(self, attribute):
+    def _get_list_property(self, attribute):
         """
         Getter for the list property
         It will execute the related query every time to return a list of hybrid objects that
@@ -304,7 +306,14 @@ class DataObject(object):
             self._objects[attribute]['data'].merge(datalist.data)
         return self._objects[attribute]['data']
 
-    def _get_dproperty(self, attribute):
+    def _get_list_guid_property(self, attribute):
+        """
+        Getter for guid list property
+        """
+        dataobjectlist = getattr(self, attribute)
+        return dataobjectlist._guids
+
+    def _get_dynamic_property(self, attribute):
         """
         Getter for dynamic property, wrapping the internal data loading property
         in a caching layer
@@ -313,7 +322,7 @@ class DataObject(object):
         return self._backend_property(data_loader, attribute)
 
     # Helper method supporting property setting
-    def _set_sproperty(self, attribute, value):
+    def _set_blueprint_property(self, attribute, value):
         """
         Setter for a simple property that will validate the type
         """
@@ -328,7 +337,7 @@ class DataObject(object):
                 raise TypeError('Property %s allows types %s. %s given'
                                 % (attribute, str(allowed_types), given_type))
 
-    def _set_cproperty(self, attribute, value):
+    def _set_relation_property(self, attribute, value):
         """
         Setter for a complex property (hybrid) that will validate the type
         """

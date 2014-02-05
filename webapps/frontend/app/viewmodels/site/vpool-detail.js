@@ -44,10 +44,9 @@ define([
             self.shared.footerData(self.vPool);
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

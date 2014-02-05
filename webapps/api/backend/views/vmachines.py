@@ -31,8 +31,9 @@ from ovs.dal.dataobjectlist import DataObjectList
 from ovs.lib.vmachine import VMachineController
 from ovs.lib.volumestoragerouter import VolumeStorageRouterController
 from ovs.dal.exceptions import ObjectNotFoundException
-from backend.serializers.serializers import SimpleSerializer, FullSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose, validate
+from backend.toolbox import Toolbox
 
 
 class VMachineViewSet(viewsets.ViewSet):
@@ -48,14 +49,9 @@ class VMachineViewSet(viewsets.ViewSet):
         Overview of all machines
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            vmachines = VMachineList.get_vmachines()
-            serializer = FullSerializer
-        else:
-            vmachines = VMachineList.get_vmachines().reduced
-            serializer = SimpleSerializer
-        serialized = serializer(VMachine, instance=vmachines, many=True)
+        vmachines = VMachineList.get_vmachines()
+        vmachines, serializer, contents = Toolbox.handle_list(vmachines, request)
+        serialized = serializer(VMachine, contents=contents, instance=vmachines, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
     @expose(internal=True, customer=True)
@@ -103,22 +99,6 @@ class VMachineViewSet(viewsets.ViewSet):
     @expose(internal=True)
     @required_roles(['view'])
     @validate(VMachine)
-    def get_vsas(self, request, obj):
-        """
-        Returns a list of VSA vMachine guids
-        """
-        _ = request
-        vsa_vmachine_guids = []
-        for vdisk in obj.vdisks:
-            if vdisk.vsrid:
-                vsr = VolumeStorageRouterList.get_by_vsrid(vdisk.vsrid)
-                vsa_vmachine_guids.append(vsr.serving_vmachine.guid)
-        return Response(vsa_vmachine_guids, status=status.HTTP_200_OK)
-
-    @link()
-    @expose(internal=True)
-    @required_roles(['view'])
-    @validate(VMachine)
     def get_served_children(self, request, obj):
         """
         Returns set of served vpool guids and (indirectly) served vmachine guids
@@ -135,20 +115,6 @@ class VMachineViewSet(viewsets.ViewSet):
                     vmachine_guids.add(vdisk.vmachine_guid)
         return Response({'vpool_guids': list(vpool_guids),
                          'vmachine_guids': list(vmachine_guids)}, status=status.HTTP_200_OK)
-
-    @link()
-    @expose(internal=True)
-    @required_roles(['view'])
-    @validate(VMachine)
-    def get_vpools(self, request, obj):
-        """
-        Returns the vPool guid(s) associated with the given vMachine
-        """
-        _ = request
-        vpool_guids = []
-        for vdisk in obj.vdisks:
-            vpool_guids.append(vdisk.vpool.guid)
-        return Response(vpool_guids, status=status.HTTP_200_OK)
 
     @link()
     @expose(internal=True)
@@ -175,14 +141,9 @@ class VMachineViewSet(viewsets.ViewSet):
         query_result = DataList({'object': VMachine,
                                  'data': DataList.select.DESCRIPTOR,
                                  'query': request.DATA['query']}).data
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            vmachines = DataObjectList(query_result, VMachine)
-            serializer = FullSerializer
-        else:
-            vmachines = DataObjectList(query_result, VMachine).reduced
-            serializer = SimpleSerializer
-        serialized = serializer(VMachine, instance=vmachines, many=True)
+        vmachines = DataObjectList(query_result, VMachine)
+        vmachines, serializer, contents = Toolbox.handle_list(vmachines, request)
+        serialized = serializer(VMachine, contents=contents, instance=vmachines, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
     @action()

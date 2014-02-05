@@ -26,8 +26,6 @@ define([
         self.guard       = { authenticated: true };
         self.refresher   = new Refresher();
         self.widgets     = [];
-        self.updateSort  = false;
-        self.sortTimeout = undefined;
 
         // Data
         self.vSAsHeaders = [
@@ -47,38 +45,32 @@ define([
         self.vSAsInitialLoad = ko.observable(true);
 
         // Variables
-        self.loadVsasHandle = undefined;
+        self.loadVSAsHandle = undefined;
+        self.refreshVSAsHandle = {};
         self.pMachineCache = {};
+        self.query = {
+            query: {
+                type: 'AND',
+                items: [['is_internal', 'EQUALS', true]]
+            }
+        };
 
         // Functions
-        self.load = function(full) {
-            full = full || false;
+        self.fetchVSAs = function() {
             return $.Deferred(function(deferred) {
-                if (generic.xhrCompleted(self.loadVsasHandle)) {
-                    var query = {
-                        query: {
-                            type: 'AND',
-                            items: [['is_internal', 'EQUALS', true]]
-                        }
-                    }, filter = {};
-                    if (full) {
-                        filter.full = true;
-                    }
-                    self.loadVsasHandle = api.post('vmachines/filter', query, filter)
+                if (generic.xhrCompleted(self.loadVSAsHandle)) {
+                    self.loadVSAsHandle = api.post('vmachines/filter', self.query, { sort: 'name' })
                         .done(function(data) {
-                            var i, guids = [], vmdata = {};
-                            for (i = 0; i < data.length; i += 1) {
-                                guids.push(data[i].guid);
-                                vmdata[data[i].guid] = data[i];
-                            }
+                            var guids = [];
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                            });
                             generic.crossFiller(
                                 guids, self.vSAs,
                                 function(guid) {
-                                    var vm = new VMachine(guid);
-                                    if (full) {
-                                        vm.fillData(vmdata[guid]);
-                                    }
-                                    return vm;
+                                    var vmachine = new VMachine(guid);
+                                    vmachine.loading(true);
+                                    return vmachine;
                                 }, 'guid'
                             );
                             self.vSAsInitialLoad(false);
@@ -90,51 +82,62 @@ define([
                 }
             }).promise();
         };
-        self.loadVSA = function(vsa) {
+        self.refreshVSAs = function(page, abort) {
+            abort = abort || false;
             return $.Deferred(function(deferred) {
-                vsa.load()
-                    .done(function() {
-                        var pMachineGuid = vsa.pMachineGuid(), pm;
-                        if (pMachineGuid && (vsa.pMachine() === undefined || vsa.pMachine().guid() !== pMachineGuid)) {
-                            if (!self.pMachineCache.hasOwnProperty(pMachineGuid)) {
-                                pm = new PMachine(pMachineGuid);
-                                pm.load();
-                                self.pMachineCache[pMachineGuid] = pm;
-                            }
-                            vsa.pMachine(self.pMachineCache[pMachineGuid]);
-                        }
-                        // (Re)sort VSAs
-                        if (self.updateSort) {
-                            self.sort();
-                        }
-                    })
-                    .always(deferred.resolve);
+                if (generic.xhrCompleted(self.refreshVSAsHandle[page]) || abort) {
+                    if (abort) {
+                        generic.xhrAbort(self.refreshVSAsHandle[page]);
+                    }
+                    var options = {
+                        sort: 'name',
+                        full: true,
+                        page: page
+                    };
+                    self.refreshVSAsHandle[page] = api.post('vmachines/filter', self.query, options)
+                        .done(function(data) {
+                            var guids = [], vsadata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vsadata[item.guid] = item;
+                            });
+                            $.each(self.vSAs(), function(index, vsa) {
+                                if ($.inArray(vsa.guid(), guids) !== -1) {
+                                    vsa.fillData(vsadata[vsa.guid()]);
+                                    var pMachineGuid = vsa.pMachineGuid(), pm;
+                                    if (pMachineGuid && (vsa.pMachine() === undefined || vsa.pMachine().guid() !== pMachineGuid)) {
+                                        if (!self.pMachineCache.hasOwnProperty(pMachineGuid)) {
+                                            pm = new PMachine(pMachineGuid);
+                                            pm.load();
+                                            self.pMachineCache[pMachineGuid] = pm;
+                                        }
+                                        vsa.pMachine(self.pMachineCache[pMachineGuid]);
+                                    }
+                                }
+                            });
+                            deferred.resolve();
+                        })
+                        .fail(deferred.reject);
+                } else {
+                    deferred.reject();
+                }
             }).promise();
-        };
-        self.sort = function() {
-            if (self.sortTimeout) {
-                window.clearTimeout(self.sortTimeout);
-            }
-            self.sortTimeout = window.setTimeout(function() { generic.advancedSort(self.vSAs, ['name', 'guid']); }, 250);
         };
 
         // Durandal
         self.activate = function() {
-            self.refresher.init(self.load, 5000);
+            self.refresher.init(self.fetchVSAs, 5000);
+            self.refresher.start();
             self.shared.footerData(self.vSAs);
 
-            self.load(true)
-                .always(function() {
-                    self.sort();
-                    self.updateSort = true;
-                    self.refresher.start();
-                });
+            self.fetchVSAs().then(function() {
+                self.refreshVSAs(1);
+            });
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

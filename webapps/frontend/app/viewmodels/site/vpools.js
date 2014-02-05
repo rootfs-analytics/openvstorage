@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-/*global define, window */
+/*global define */
 define([
     'jquery', 'durandal/app', 'plugins/dialog', 'knockout',
     'ovs/shared', 'ovs/generic', 'ovs/refresher', 'ovs/api',
@@ -26,8 +26,6 @@ define([
         self.guard       = { authenticated: true };
         self.refresher   = new Refresher();
         self.widgets     = [];
-        self.updateSort  = false;
-        self.sortTimeout = undefined;
 
         // Data
         self.vPoolHeaders = [
@@ -46,31 +44,24 @@ define([
 
         // Variables
         self.loadVPoolsHandle = undefined;
+        self.refreshVPoolsHandle = {};
 
         // Functions
-        self.load = function(full) {
-            full = full || false;
+        self.fetchVPools = function() {
             return $.Deferred(function(deferred) {
                 if (generic.xhrCompleted(self.loadVPoolsHandle)) {
-                    var filter = {};
-                    if (full) {
-                        filter.full = true;
-                    }
-                    self.loadVPoolsHandle = api.get('vpools', {}, filter)
+                    self.loadVPoolsHandle = api.get('vpools', {}, { sort: 'name' })
                         .done(function(data) {
-                            var i, guids = [], vpdata = {};
-                            for (i = 0; i < data.length; i += 1) {
-                                guids.push(data[i].guid);
-                                vpdata[data[i].guid] = data[i];
-                            }
+                            var guids = [];
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                            });
                             generic.crossFiller(
                                 guids, self.vPools,
                                 function(guid) {
-                                    var vp = new VPool(guid);
-                                    if (full) {
-                                        vp.fillData(vpdata[guid]);
-                                    }
-                                    return vp;
+                                    var vpool = new VPool(guid);
+                                    vpool.loading(true);
+                                    return vpool;
                                 }, 'guid'
                             );
                             self.vPoolsInitialLoad(false);
@@ -82,83 +73,90 @@ define([
                 }
             }).promise();
         };
-        self.loadVPool = function(vpool) {
+        self.refreshVPools = function(page, abort) {
+            abort = abort || false;
             return $.Deferred(function(deferred) {
-                vpool.load()
-                    .done(function() {
-                        // (Re)sort vPools
-                        if (self.updateSort) {
-                            self.sort();
-                        }
-                    })
-                    .always(deferred.resolve);
+                if (generic.xhrCompleted(self.refreshVPoolsHandle[page]) || abort) {
+                    if (abort) {
+                        generic.xhrAbort(self.refreshVPoolsHandle[page]);
+                    }
+                    var options = {
+                        sort: 'name',
+                        full: true,
+                        page: page
+                    };
+                    self.refreshVPoolsHandle[page] = api.get('vpools', {}, options)
+                        .done(function(data) {
+                            var guids = [], vpdata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vpdata[item.guid] = item;
+                            });
+                            $.each(self.vPools(), function(index, vpool) {
+                                if ($.inArray(vpool.guid(), guids) !== -1) {
+                                    vpool.fillData(vpdata[vpool.guid()]);
+                                }
+                            });
+                            deferred.resolve();
+                        })
+                        .fail(deferred.reject);
+                } else {
+                    deferred.reject();
+                }
             }).promise();
         };
-        self.sort = function() {
-            if (self.sortTimeout) {
-                window.clearTimeout(self.sortTimeout);
-            }
-            self.sortTimeout = window.setTimeout(function() { generic.advancedSort(self.vPools, ['name', 'guid']); }, 250);
-        };
         self.sync = function(guid) {
-            var i, vpools = self.vPools(), vp;
-            for (i = 0; i < vpools.length; i += 1) {
-                if (vpools[i].guid() === guid) {
-                    vp = vpools[i];
+            $.each(self.vPools(), function(index, vp) {
+                if (vp.guid() === guid) {
+                    app.showMessage(
+                            $.t('ovs:vpools.sync.warning'),
+                            $.t('ovs:vpools.sync.title', { what: vp.name() }),
+                            [$.t('ovs:vpools.sync.no'), $.t('ovs:vpools.sync.yes')]
+                        )
+                        .done(function(answer) {
+                            if (answer === $.t('ovs:vpools.sync.yes')) {
+                                generic.alertInfo(
+                                    $.t('ovs:vpools.sync.marked'),
+                                    $.t('ovs:vpools.sync.markedmsg', { what: vp.name() })
+                                );
+                                api.post('vpools/' + vp.guid() + '/sync_vmachines')
+                                    .then(self.shared.tasks.wait)
+                                    .done(function() {
+                                        generic.alertSuccess(
+                                            $.t('ovs:vpools.sync.done'),
+                                            $.t('ovs:vpools.sync.donemsg', { what: vp.name() })
+                                        );
+                                    })
+                                    .fail(function(error) {
+                                        generic.alertError(
+                                            $.t('ovs:generic.error'),
+                                            $.t('ovs:generic.messages.errorwhile', {
+                                                context: 'error',
+                                                what: $.t('ovs:vpools.sync.errormsg', { what: vp.name() }),
+                                                error: error
+                                            })
+                                        );
+                                    });
+                            }
+                        });
                 }
-            }
-            if (vp !== undefined) {
-                app.showMessage(
-                        $.t('ovs:vpools.sync.warning'),
-                        $.t('ovs:vpools.sync.title', { what: vp.name() }),
-                        [$.t('ovs:vpools.sync.no'), $.t('ovs:vpools.sync.yes')]
-                    )
-                    .done(function(answer) {
-                        if (answer === $.t('ovs:vpools.sync.yes')) {
-                            generic.alertInfo(
-                                $.t('ovs:vpools.sync.marked'),
-                                $.t('ovs:vpools.sync.markedmsg', { what: vp.name() })
-                            );
-                            api.post('vpools/' + vp.guid() + '/sync_vmachines')
-                                .then(self.shared.tasks.wait)
-                                .done(function() {
-                                    generic.alertSuccess(
-                                        $.t('ovs:vpools.sync.done'),
-                                        $.t('ovs:vpools.sync.donemsg', { what: vp.name() })
-                                    );
-                                })
-                                .fail(function(error) {
-                                    generic.alertError(
-                                        $.t('ovs:generic.error'),
-                                        $.t('ovs:generic.messages.errorwhile', {
-                                            context: 'error',
-                                            what: $.t('ovs:vpools.sync.errormsg', { what: vp.name() }),
-                                            error: error
-                                        })
-                                    );
-                                });
-                        }
-                    });
-            }
+            });
         };
 
         // Durandal
         self.activate = function() {
-            self.refresher.init(self.load, 5000);
+            self.refresher.init(self.fetchVPools, 5000);
+            self.refresher.start();
             self.shared.footerData(self.vPools);
 
-            self.load(true)
-                .always(function() {
-                    self.sort();
-                    self.updateSort = true;
-                    self.refresher.start();
-                });
+            self.fetchVPools().then(function() {
+                self.refreshVPools(1);
+            });
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

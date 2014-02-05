@@ -124,6 +124,18 @@ define(['jquery', 'jqp/pnotify'], function($) {
         }
         return fallback;
     }
+    function trySet(observable, object, key, formatFunction) {
+        if (object !== undefined && object.hasOwnProperty(key)) {
+            if (formatFunction !== undefined && formatFunction.call) {
+                observable(formatFunction(object[key]));
+            } else {
+                observable(object[key]);
+            }
+        }
+    }
+    function lower(value) {
+        return value.toLowerCase();
+    }
     function getCookie(name) {
         var i, cookie, cookies;
         cookies = document.cookie.split(';');
@@ -328,6 +340,8 @@ define(['jquery', 'jqp/pnotify'], function($) {
         getCookie       : getCookie,
         setCookie       : setCookie,
         tryGet          : tryGet,
+        trySet          : trySet,
+        lower           : lower,
         alert           : alert,
         alertInfo       : alertInfo,
         alertSuccess    : alertSuccess,

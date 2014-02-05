@@ -32,16 +32,16 @@ define([
         self.guid              = ko.observable(guid);
         self.name              = ko.observable();
         self.size              = ko.smoothObservable(undefined, generic.formatBytes);
-        self.iops              = ko.smoothDeltaObservable(generic.formatNumber);
+        self.iops              = ko.smoothObservable(undefined, generic.formatNumber);
         self.storedData        = ko.smoothObservable(undefined, generic.formatBytes);
-        self.cacheHits         = ko.smoothDeltaObservable();
-        self.cacheMisses       = ko.smoothDeltaObservable();
+        self.cacheHits         = ko.smoothObservable(undefined);
+        self.cacheMisses       = ko.smoothObservable(undefined);
         self.numberOfDisks     = ko.smoothObservable(undefined);
         self.numberOfMachines  = ko.smoothObservable(undefined);
-        self.readSpeed         = ko.smoothDeltaObservable(generic.formatSpeed);
-        self.writeSpeed        = ko.smoothDeltaObservable(generic.formatSpeed);
-        self.backendWriteSpeed = ko.smoothDeltaObservable(generic.formatSpeed);
-        self.backendReadSpeed  = ko.smoothDeltaObservable(generic.formatSpeed);
+        self.readSpeed         = ko.smoothObservable(undefined, generic.formatSpeed);
+        self.writeSpeed        = ko.smoothObservable(undefined, generic.formatSpeed);
+        self.backendWriteSpeed = ko.smoothObservable(undefined, generic.formatSpeed);
+        self.backendReadSpeed  = ko.smoothObservable(undefined, generic.formatSpeed);
         self.backendReads      = ko.smoothObservable(undefined, generic.formatNumber);
         self.backendWritten    = ko.smoothObservable(undefined, generic.formatBytes);
         self.backendRead       = ko.smoothObservable(undefined, generic.formatBytes);
@@ -64,37 +64,26 @@ define([
             return generic.formatRatio((self.size.raw() - (self.storedData.raw() || 0)) / self.size.raw() * 100);
         });
 
-        self._bandwidth = ko.computed(function() {
-            var total = (self.readSpeed.raw() || 0) + (self.writeSpeed.raw() || 0),
-                initialized = self.readSpeed.initialized() && self.writeSpeed.initialized();
-            return {
-                value: generic.formatSpeed(total),
-                initialized: initialized
-            };
-        });
         self.bandwidth = ko.computed(function() {
-            return self._bandwidth().value;
-        });
-        self.bandwidth.initialized = ko.computed(function() {
-            return self._bandwidth().initialized;
+            var total = (self.readSpeed.raw() || 0) + (self.writeSpeed.raw() || 0);
+            return generic.formatSpeed(total);
         });
 
         self.fillData = function(data) {
-             var type = '', stats = data.statistics,
-                statsTime = Math.round(stats.timestamp * 1000);
+             var type = '', stats = data.statistics;
             if (data.backend_type) {
                 type = $.t('ovs:vpools.backendtypes.' + data.backend_type);
             }
             self.name(data.name);
-            self.iops({ value: stats.write_operations + stats.read_operations, timestamp: statsTime });
+            self.iops(stats.write_operations_ps + stats.read_operations_ps);
             self.size(data.size);
             self.storedData(data.stored_data);
-            self.cacheHits({ value: stats.sco_cache_hits + stats.cluster_cache_hits, timestamp: statsTime });
-            self.cacheMisses({ value: stats.sco_cache_misses, timestamp: statsTime });
-            self.readSpeed({ value: stats.data_read, timestamp: statsTime });
-            self.writeSpeed({ value: stats.data_written, timestamp: statsTime });
-            self.backendReadSpeed({ value: stats.backend_data_read, timestamp: statsTime });
-            self.backendWriteSpeed({ value: stats.backend_data_written, timestamp: statsTime });
+            self.cacheHits(stats.sco_cache_hits_ps + stats.cluster_cache_hits_ps);
+            self.cacheMisses(stats.sco_cache_misses_ps);
+            self.readSpeed(stats.data_read_ps);
+            self.writeSpeed(stats.data_written_ps);
+            self.backendReadSpeed(stats.backend_data_read_ps);
+            self.backendWriteSpeed(stats.backend_data_written_ps);
             self.backendWritten(stats.data_written);
             self.backendRead(stats.data_read);
             self.backendReads(stats.backend_read_operations);

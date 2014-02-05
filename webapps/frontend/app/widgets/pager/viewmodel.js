@@ -24,12 +24,9 @@ define([
         self.refresher       = new Refresher();
 
         // Fields
-        self.viewportkeys    = [];
-        self.key             = ko.observable();
         self.internalCurrent = ko.observable(1);
         self.headers         = ko.observableArray([]);
         self.settings        = ko.observable({});
-        self.pagesize        = ko.observable(0);
         self.padding         = ko.observable(2);
         self.controls        = ko.observable(true);
 
@@ -41,21 +38,28 @@ define([
             return [];
         });
         self.showControls = ko.computed(function() {
-            return self.controls() || (self.totalItems() > self.pagesize());
+            return self.controls() || (self.totalItems() > 10);
         });
         self.totalItems = ko.computed(function() {
             return self.items().length;
         });
         self.lastPage = ko.computed(function() {
-            return Math.floor((self.totalItems() - 1) / self.pagesize()) + 1;
+            return Math.floor((self.totalItems() - 1) / 10) + 1;
         });
         self.current = ko.computed({
             // One-based
             read: function() {
-                return Math.min(self.internalCurrent(), Math.floor(self.totalItems() / Math.max(1, self.pagesize())) + 1);
+                return Math.min(self.internalCurrent(), Math.floor(self.totalItems() / 10) + 1);
             },
             write: function(value) {
                 self.internalCurrent(value);
+                self.viewportRefresh(value, true);
+                if (value < self.lastPage()) {
+                    self.viewportRefresh(value + 1);
+                }
+                if (value > 1) {
+                    self.viewportRefresh(value - 1);
+                }
             }
         });
         self.hasNext = ko.computed(function() {
@@ -65,10 +69,10 @@ define([
             return self.current() > 1;
         });
         self.pageFirst = ko.computed(function() {
-            return (self.current() - 1) * self.pagesize() + 1;
+            return (self.current() - 1) * 10 + 1;
         });
         self.pageLast = ko.computed(function() {
-            return Math.min(self.pageFirst() + self.pagesize() - 1, self.items().length);
+            return Math.min(self.pageFirst() + 9, self.items().length);
         });
         self.pages = ko.computed(function() {
             var i,
@@ -86,20 +90,11 @@ define([
             var i,
                 items = self.items(),
                 vItems = [],
-                vIndexes = [],
-                start = (self.current() - 1) * self.pagesize(),
-                max = Math.min(start + self.pagesize(), items.length);
-            if (self.key() !== undefined) {
-                for (i = start; i < max; i += 1) {
-                    if (self.enterViewport !== undefined && $.inArray(items[i][self.key()](), self.viewportkeys) === -1) {
-                        // If the viewport changes and an item enters the viewport, we'll request an update
-                        self.enterViewport(items[i]);
-                    }
-                    vIndexes.push(items[i][self.key()]());
-                    vItems.push(items[i]);
-                }
+                start = (self.current() - 1) * 10,
+                max = Math.min(start + 10, items.length);
+            for (i = start; i < max; i += 1) {
+                vItems.push(items[i]);
             }
-            self.viewportkeys = vIndexes.slice();
             return vItems;
         }).extend({ throttle: 50 });
 
@@ -114,15 +109,6 @@ define([
                 }
             }
         };
-        self.viewportRefresh = function() {
-            var i, items = self.viewportItems();
-            for (i = 0; i < items.length; i += 1) {
-                if (self.enterViewport !== undefined) {
-                    // If there is viewport refreshing, we also request an update
-                    self.enterViewport(items[i]);
-                }
-            }
-        };
 
         self.activate = function(settings) {
             if (!settings.hasOwnProperty('items')) {
@@ -131,21 +117,18 @@ define([
             if (!settings.hasOwnProperty('headers')) {
                 throw 'Headers should be specified';
             }
-            if (!settings.hasOwnProperty('key')) {
-                throw 'Key should be specified';
-            }
 
-            self.enterViewport = generic.tryGet(settings, 'enterViewport');
-            self.refresh = generic.tryGet(settings, 'viewportRefresh');
+            self.refresh = generic.tryGet(settings, 'viewportRefreshInterval');
+            self.viewportRefresh = generic.tryGet(settings, 'viewportRefresh');
             self.initialLoad = generic.tryGet(settings, 'initialLoad', ko.observable(false));
             self.settings(settings);
             self.headers(settings.headers);
-            self.pagesize(settings.pagesize);
             self.controls(generic.tryGet(settings, 'controls', true));
-            self.key(settings.key);
 
             if (self.refresh !== undefined) {
-                self.refresher.init(self.viewportRefresh, self.refresh);
+                self.refresher.init(function() {
+                    self.viewportRefresh(self.current());
+                }, self.refresh);
                 self.refresher.start();
                 settings.bindingContext.$root.widgets.push(self);
             }

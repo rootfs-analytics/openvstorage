@@ -26,8 +26,6 @@ define([
         self.guard       = { authenticated: true };
         self.refresher   = new Refresher();
         self.widgets     = [];
-        self.updateSort  = false;
-        self.sortTimeout = undefined;
 
         // Data
         self.vTemplateHeaders = [
@@ -41,37 +39,31 @@ define([
 
         // Variables
         self.loadVTemplatesHandle = undefined;
+        self.refreshVTemplatesHandle = {};
+        self.query = {
+            query: {
+                type: 'AND',
+                items: [['is_internal', 'EQUALS', false],
+                        ['is_vtemplate', 'EQUALS', true]]
+            }
+        };
 
         // Functions
-        self.load = function(full) {
-            full = full || false;
+        self.fetchVTemplates = function() {
             return $.Deferred(function(deferred) {
                 if (generic.xhrCompleted(self.loadVTemplatesHandle)) {
-                    var query = {
-                            query: {
-                                type: 'AND',
-                                items: [['is_internal', 'EQUALS', false],
-                                        ['is_vtemplate', 'EQUALS', true]]
-                            }
-                        }, filter = {};
-                    if (full) {
-                        filter.full = true;
-                    }
-                    self.loadVTemplatesHandle = api.post('vmachines/filter', query, filter)
+                    self.loadVTemplatesHandle = api.post('vmachines/filter', self.query, { sort: 'name' })
                         .done(function(data) {
-                            var i, guids = [], vmdata = {};
-                            for (i = 0; i < data.length; i += 1) {
-                                guids.push(data[i].guid);
-                                vmdata[data[i].guid] = data[i];
-                            }
+                            var guids = [];
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                            });
                             generic.crossFiller(
                                 guids, self.vTemplates,
                                 function(guid) {
-                                    var vm = new VMachine(guid);
-                                    if (full) {
-                                        vm.fillData(vmdata[guid]);
-                                    }
-                                    return vm;
+                                    var vmachine = new VMachine(guid);
+                                    vmachine.loading(true);
+                                    return vmachine;
                                 }, 'guid'
                             );
                             self.vTemplatesInitialLoad(false);
@@ -83,66 +75,76 @@ define([
                 }
             }).promise();
         };
-        self.loadVTemplate = function(vt) {
+        self.refreshVTemplates = function(page, abort) {
+            abort = abort || false;
             return $.Deferred(function(deferred) {
-                vt.load()
-                    .then(vt.fetchTemplateChildrenGuids)
-                    .done(function() {
-                        // (Re)sort vTemplates
-                        if (self.updateSort) {
-                            self.sort();
-                        }
-                    })
-                    .always(deferred.resolve);
+                if (generic.xhrCompleted(self.refreshVTemplatesHandle[page]) || abort) {
+                    if (abort) {
+                        generic.xhrAbort(self.refreshVTemplatesHandle[page]);
+                    }
+                    var options = {
+                        sort: 'name',
+                        full: true,
+                        page: page
+                    };
+                    self.refreshVTemplatesHandle[page] = api.post('vmachines/filter', self.query, options)
+                        .done(function(data) {
+                            var guids = [], vtdata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vtdata[item.guid] = item;
+                            });
+                            $.each(self.vTemplates(), function(index, vt) {
+                                if ($.inArray(vt.guid(), guids) !== -1) {
+                                    vt.fillData(vtdata[vt.guid()]);
+                                    vt.fetchTemplateChildrenGuids();
+                                }
+                            });
+                            deferred.resolve();
+                        })
+                        .fail(deferred.reject);
+                } else {
+                    deferred.reject();
+                }
             }).promise();
         };
-        self.sort = function() {
-            if (self.sortTimeout) {
-                window.clearTimeout(self.sortTimeout);
-            }
-            self.sortTimeout = window.setTimeout(function() { generic.advancedSort(self.vTemplates, ['name', 'guid']); }, 250);
-        };
         self.deleteVT = function(guid) {
-            var i, vts = self.vTemplates(), vm;
-            for (i = 0; i < vts.length; i += 1) {
-                if (vts[i].guid() === guid) {
-                    vm = vts[i];
+            $.each(self.vTemplates(), function(index, vm) {
+                if (vm.guid() === guid) {
+                    app.showMessage(
+                            $.t('ovs:vmachines.delete.warning', { what: vm.name() }),
+                            $.t('ovs:generic.areyousure'),
+                            [$.t('ovs:generic.no'), $.t('ovs:generic.yes')]
+                        )
+                        .done(function(answer) {
+                            if (answer === $.t('ovs:generic.yes')) {
+                                self.vTemplates.destroy(vm);
+                                generic.alertInfo(
+                                    $.t('ovs:vmachines.delete.marked'),
+                                    $.t('ovs:vmachines.delete.markedmsg', { what: vm.name() })
+                                );
+                                api.del('vmachines/' + vm.guid())
+                                    .then(self.shared.tasks.wait)
+                                    .done(function() {
+                                        generic.alertSuccess(
+                                            $.t('ovs:vmachines.delete.done'),
+                                            $.t('ovs:vmachines.delete.donemsg', { what: vm.name() })
+                                        );
+                                    })
+                                    .fail(function(error) {
+                                        generic.alertError(
+                                            $.t('ovs:generic.error'),
+                                            $.t('ovs:generic.messages.errorwhile', {
+                                                context: 'error',
+                                                what: $.t('ovs:vmachines.delete.errormsg', { what: vm.name() }),
+                                                error: error
+                                            })
+                                        );
+                                    });
+                            }
+                        });
                 }
-            }
-            if (vm !== undefined) {
-                app.showMessage(
-                        $.t('ovs:vmachines.delete.warning', { what: vm.name() }),
-                        $.t('ovs:generic.areyousure'),
-                        [$.t('ovs:generic.no'), $.t('ovs:generic.yes')]
-                    )
-                    .done(function(answer) {
-                        if (answer === $.t('ovs:generic.yes')) {
-                            self.vTemplates.destroy(vm);
-                            generic.alertInfo(
-                                $.t('ovs:vmachines.delete.marked'),
-                                $.t('ovs:vmachines.delete.markedmsg', { what: vm.name() })
-                            );
-                            api.del('vmachines/' + vm.guid())
-                                .then(self.shared.tasks.wait)
-                                .done(function() {
-                                    generic.alertSuccess(
-                                        $.t('ovs:vmachines.delete.done'),
-                                        $.t('ovs:vmachines.delete.donemsg', { what: vm.name() })
-                                    );
-                                })
-                                .fail(function(error) {
-                                    generic.alertError(
-                                        $.t('ovs:generic.error'),
-                                        $.t('ovs:generic.messages.errorwhile', {
-                                            context: 'error',
-                                            what: $.t('ovs:vmachines.delete.errormsg', { what: vm.name() }),
-                                            error: error
-                                        })
-                                    );
-                                });
-                        }
-                    });
-            }
+            });
         };
         self.createFromTemplate = function(guid) {
             dialog.show(new CreateFromTemplateWizard({
@@ -153,21 +155,18 @@ define([
 
         // Durandal
         self.activate = function() {
-            self.refresher.init(self.load, 5000);
+            self.refresher.init(self.fetchVTemplates, 5000);
+            self.refresher.start();
             self.shared.footerData(self.vTemplates);
 
-            self.load(true)
-                .always(function() {
-                    self.sort();
-                    self.updateSort = true;
-                    self.refresher.start();
-                });
+            self.fetchVTemplates().then(function() {
+                self.refreshVTemplates(1);
+            });
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

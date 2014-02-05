@@ -20,8 +20,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from ovs.dal.lists.pmachinelist import PMachineList
 from ovs.dal.hybrids.pmachine import PMachine
-from backend.serializers.serializers import SimpleSerializer, FullSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose, validate
+from backend.toolbox import Toolbox
 
 
 class PMachineViewSet(viewsets.ViewSet):
@@ -37,13 +38,8 @@ class PMachineViewSet(viewsets.ViewSet):
         Overview of all pMachines
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            pmachines = PMachineList.get_pmachines()
-            serializer = FullSerializer
-        else:
-            pmachines = PMachineList.get_pmachines().reduced
-            serializer = SimpleSerializer
+        pmachines = PMachineList.get_pmachines()
+        pmachines, serializer, contents = Toolbox.handle_list(pmachines, request)
         serialized = serializer(PMachine, instance=pmachines, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 

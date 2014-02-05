@@ -43,6 +43,16 @@ class VolumeStorageRouterClient(object):
         self._port = None
         self.empty_statistics = lambda: storagerouterclient.Statistics()
         self.empty_info = lambda: storagerouterclient.VolumeInfo()
+        self.stat_counters = ['backend_data_read', 'backend_data_written',
+                              'backend_read_operations', 'backend_write_operations',
+                              'cluster_cache_hits', 'cluster_cache_misses', 'data_read',
+                              'data_written', 'metadata_store_hits', 'metadata_store_misses',
+                              'read_operations', 'sco_cache_hits', 'sco_cache_misses',
+                              'write_operations']
+        self.stat_sums = {'operations': ['write_operations', 'read_operations'],
+                          'cache_hits': ['sco_cache_hits', 'cluster_cache_hits'],
+                          'data_transfered': ['data_written', 'data_read']}
+        self.stat_keys = self.stat_counters + self.stat_sums.keys()
 
     def load(self, vpool=None, vsr=None):
         """

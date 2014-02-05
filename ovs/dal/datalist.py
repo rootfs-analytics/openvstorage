@@ -54,6 +54,7 @@ class DataList(object):
         NOT_EQUALS = 'NOT_EQUALS'
         LT = 'LT'
         GT = 'GT'
+        IN = 'IN'
 
     select = Select()
     where_operator = WhereOperator()
@@ -159,6 +160,8 @@ class DataList(object):
             return value > item[2]
         if item[1] == DataList.operator.LT:
             return value < item[2]
+        if item[1] == DataList.operator.IN:
+            return value in item[2]
         raise NotImplementedError('The given operator {} is not yet implemented.'.format(item[1]))
 
     def _load(self):

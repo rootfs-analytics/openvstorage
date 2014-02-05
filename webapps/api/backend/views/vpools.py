@@ -22,8 +22,9 @@ from rest_framework.decorators import link, action
 from ovs.dal.lists.vpoollist import VPoolList
 from ovs.dal.hybrids.vpool import VPool
 from ovs.lib.vpool import VPoolController
-from backend.serializers.serializers import SimpleSerializer, FullSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose, validate
+from backend.toolbox import Toolbox
 
 
 class VPoolViewSet(viewsets.ViewSet):
@@ -39,13 +40,8 @@ class VPoolViewSet(viewsets.ViewSet):
         Overview of all vPools
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            vpools = VPoolList.get_vpools()
-            serializer = FullSerializer
-        else:
-            vpools = VPoolList.get_vpools().reduced
-            serializer = SimpleSerializer
+        vpools = VPoolList.get_vpools()
+        vpools, serializer, contents = Toolbox.handle_list(vpools, request)
         serialized = serializer(VPool, instance=vpools, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
