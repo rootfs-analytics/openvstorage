@@ -29,7 +29,7 @@ import time
 
 from optparse import OptionParser
 from random import choice
-from string import lowercase
+from string import lowercase, digits
 from subprocess import check_output
 
 ARAKOON_CONFIG_TAG = '/opt/OpenvStorage/config/arakoon/{0}/{0}.cfg'
@@ -55,34 +55,60 @@ class Manager(object):
             Manager._clean(client)
         Manager._create_filesystems(client, create_extra_filesystems)
 
+        possible_hypervisor = None
+        try:
+            module = client.run('lsmod | grep kvm').strip()
+        except:
+            module = ''
+        if module != '':
+            possible_hypervisor = 'KVM'
+        else:
+            try:
+                disktypes = client.run('dmesg | grep VMware').strip()
+            except:
+                disktypes = ''
+            if disktypes != '':
+                possible_hypervisor = 'VMWARE'
+        hypervisor = Helper.ask_choice(['VMWARE', 'KVM'], question='Which hypervisor will be backing this VSA?', default_value=possible_hypervisor)
+
+        ipaddresses = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
+        ipaddresses = [found_ip for found_ip in ipaddresses if found_ip != '127.0.0.1']
+
         # Ask a bunch of questions and prepare HRD files for installation
         first_node = False
         if is_local:
             # @TODO: Try to figure out whether this is the first node or not.
             first_node = Helper.ask_yesno('Is this a first node installation?', default_value=True)
         configuration = {'openvstorage': {}}
-        configuration['openvstorage']['ovs.host.hypervisor'] = 'VMWARE'
-        configuration['openvstorage']['ovs.host.name'] = Helper.ask_string('Enter hypervisor hostname', default_value='esxi')
-        ip, username, password = None, 'root', None
-        while True:
-            ip = Helper.ask_string('Enter hypervisor ip address', default_value=ip)
-            username = Helper.ask_string('Enter hypervisor username', default_value=username)
-            password = getpass.getpass()
-            try:
-                request = urllib2.Request('https://{0}/mob'.format(ip))
-                auth = base64.encodestring('{0}:{1}'.format(username, password)).replace('\n', '')
-                request.add_header("Authorization", "Basic %s" % auth)
-                urllib2.urlopen(request).read()
-                break
-            except Exception as ex:
-                print 'Could not connect to {0}: {1}'.format(ip, ex)
-        configuration['openvstorage']['ovs.host.ip'] = ip
+        configuration['openvstorage']['ovs.host.hypervisor'] = hypervisor
+        default_name = 'esxi' if hypervisor == 'VMWARE' else 'kvm'
+        configuration['openvstorage']['ovs.host.name'] = Helper.ask_string('Enter hypervisor hostname', default_value=default_name)
+        hypervisor_ip, username, hypervisor_password = None, 'root', None
+        if hypervisor == 'VMWARE':
+            while True:
+                hypervisor_ip = Helper.ask_string('Enter hypervisor ip address', default_value=ip)
+                username = Helper.ask_string('Enter hypervisor username', default_value=username)
+                hypervisor_password = getpass.getpass()
+                try:
+                    request = urllib2.Request('https://{0}/mob'.format(hypervisor_ip))
+                    auth = base64.encodestring('{0}:{1}'.format(username, hypervisor_password)).replace('\n', '')
+                    request.add_header("Authorization", "Basic %s" % auth)
+                    urllib2.urlopen(request).read()
+                    break
+                except Exception as ex:
+                    print 'Could not connect to {0}: {1}'.format(hypervisor_ip, ex)
+        elif hypervisor == 'KVM':
+            # In case of KVM, the VSA is the pMachine, so credentials are shared.
+            hypervisor_ip = Helper.ask_choice(ipaddresses,
+                                              question='Choose hypervisor public ip address',
+                                              default_value=Helper.find_in_list(ipaddresses, ip))
+            username = client.run('whoami').strip()
+            hypervisor_password = password
+        configuration['openvstorage']['ovs.host.ip'] = hypervisor_ip
         configuration['openvstorage']['ovs.host.login'] = username
-        configuration['openvstorage']['ovs.host.password'] = password
+        configuration['openvstorage']['ovs.host.password'] = hypervisor_password
 
         configuration['openvstorage-core'] = {}
-        ipaddresses = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
-        ipaddresses = [ip for ip in ipaddresses if ip != '127.0.0.1']
         configuration['openvstorage-core']['ovs.grid.ip'] = Helper.ask_choice(ipaddresses,
                                                                               question='Choose public ip address',
                                                                               default_value=Helper.find_in_list(ipaddresses, ip))
@@ -405,7 +431,10 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
 
         # Make sure the process manager is started
         client = Client.load(ip, password)
-        client.run('service processmanager start')
+        try:
+            client.run('service processmanager start')
+        except:
+            pass
 
         # Add VSA and pMachine in the model, if they don't yet exist
         pmachine = None
@@ -434,7 +463,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             vsa.is_vtemplate = False
             vsa.is_internal = True
             vsa.machineid = unique_id
-            vsa.ip = ip
+            vsa.ip = Manager._read_remote_config(client, 'ovs.grid.ip')
             vsa.save()
         vsa.pmachine = pmachine
         vsa.save()
@@ -781,7 +810,8 @@ fstab.add_config('{1}', '{0}', '{2}', '{3}', '{4}', '{5}')
             client.run('mkdir -p {0}'.format(vsr.mountpoint_dfs))
             client.run('mount {0}'.format(vsr.mountpoint_dfs), pty=False)
 
-        Manager.init_exportfs(client, vpool.name)
+        if vsa.pmachine.hvtype == 'VMWARE':
+            Manager.init_exportfs(client, vpool.name)
 
         # Start services
         for node in nodes:
@@ -900,22 +930,48 @@ print Configuration.get('{0}')
         """
         Creates filesystems on the first two additional disks
         """
-        mounted = client.run("mount | cut -d ' ' -f 1").strip().split('\n')
+        drive_lines = client.run("ls -l /dev/sd* | sed 's/\s\s*/ /g' | cut -d ' ' -f 10").split('\n')
+        drives = {}
+        for drive in drive_lines:
+            partition = drive.strip()
+            if partition == '':
+                continue
+            drive = partition.translate(None, digits)
+            if drive not in drives:
+                identifier = drive.replace('/dev/', '')
+                if client.run('cat /sys/block/{0}/device/type'.format(identifier)).strip() == '0' \
+                        and client.run('cat /sys/block/{0}/removable'.format(identifier)).strip() == '0':
+                    try:
+                        ssd_output = client.run("hdparm -I {0} 2> /dev/null | grep 'Solid State'".format(drive)).strip()
+                    except:
+                        ssd_output = ''
+                    drives[drive] = {'ssd': 'Solid State' in ssd_output,
+                                     'partitions': []}
+            if drive in drives:
+                drives[drive]['partitions'].append(partition)
+        mounted = [device.strip() for device in client.run("mount | cut -d ' ' -f 1").strip().split('\n')]
+        root_partition = client.run("mount | grep 'on / ' | cut -d ' ' -f 1").strip()
 
         # Create partitions on SSD
-        if '/dev/sdb1' in mounted:
-            client.run('umount /dev/sdb1')
-        if '/dev/sdb2' in mounted:
-            client.run('umount /dev/sdb2')
-        if '/dev/sdb3' in mounted:
-            client.run('umount /dev/sdb3')
-        client.run('parted /dev/sdb -s mklabel gpt')
-        client.run('parted /dev/sdb -s mkpart cache 2MB 50%')
-        client.run('parted /dev/sdb -s mkpart db 50% 75%')
-        client.run('parted /dev/sdb -s mkpart mdpath 75% 100%')
-        client.run('mkfs.ext4 -q /dev/sdb1 -L cache')
-        client.run('mkfs.ext4 -q /dev/sdb2 -L db')
-        client.run('mkfs.ext4 -q /dev/sdb3 -L mdpath')
+        ssds = [drive for drive, info in drives.iteritems() if info['ssd'] is True and root_partition not in info['partitions']]
+        if len(ssds) == 0:
+            print 'No SSD was found. At least one SSD is required'
+            sys.exit(1)
+        if len(ssds) > 1:
+            ssd = Helper.ask_choice(ssds, question='Choose the SSD to use for Open vStorage')
+        else:
+            ssd = ssds[0]
+        print 'Using {0} as SSD'.format(ssd)
+        for partition in drives[ssd]['partitions']:
+            if partition in mounted:
+                client.run('umount {0}'.format(partition))
+        client.run('parted {0} -s mklabel gpt'.format(ssd))
+        client.run('parted {0} -s mkpart cache 2MB 50%'.format(ssd))
+        client.run('parted {0} -s mkpart db 50% 75%'.format(ssd))
+        client.run('parted {0} -s mkpart mdpath 75% 100%'.format(ssd))
+        client.run('mkfs.ext4 -q {0}1 -L cache'.format(ssd))
+        client.run('mkfs.ext4 -q {0}2 -L db'.format(ssd))
+        client.run('mkfs.ext4 -q {0}3 -L mdpath'.format(ssd))
 
         client.run('mkdir -p /mnt/db')
         client.run('mkdir -p /mnt/cache')
@@ -924,24 +980,30 @@ print Configuration.get('{0}')
         extra_mountpoints = ''
         if create_extra:
             # Create partitions on HDD
-            if '/dev/sdc1' in mounted:
-                client.run('umount /dev/sdc1')
-            if '/dev/sdc2' in mounted:
-                client.run('umount /dev/sdc2')
-            if '/dev/sdc3' in mounted:
-                client.run('umount /dev/sdc3')
-            client.run('parted /dev/sdc -s mklabel gpt')
-            client.run('parted /dev/sdc -s mkpart backendfs 2MB 80%')
-            client.run('parted /dev/sdc -s mkpart distribfs 80% 90%')
-            client.run('parted /dev/sdc -s mkpart tempfs 90% 100%')
-            client.run('mkfs.ext4 -q /dev/sdc1 -L backendfs')
-            client.run('mkfs.ext4 -q /dev/sdc2 -L distribfs')
-            client.run('mkfs.ext4 -q /dev/sdc3 -L tempfs')
+            hdds = [drive for drive, info in drives.iteritems() if info['ssd'] is False and root_partition not in info['partitions']]
+            if len(hdds) == 0:
+                print 'No HDD was found. At least one HDD is required when creating extra filesystems'
+                sys.exit(1)
+            if len(hdds) > 1:
+                hdd = Helper.ask_choice(ssds, question='Choose the HDD to use for Open vStorage')
+            else:
+                hdd = hdds[0]
+            print 'Using {0} as extra HDD'.format(hdd)
+            for partition in drives[hdd]['partitions']:
+                if partition in mounted:
+                    client.run('umount {0}'.format(partition))
+            client.run('parted {0} -s mklabel gpt'.format(hdd))
+            client.run('parted {0} -s mkpart backendfs 2MB 80%'.format(hdd))
+            client.run('parted {0} -s mkpart distribfs 80% 90%'.format(hdd))
+            client.run('parted {0} -s mkpart tempfs 90% 100%'.format(hdd))
+            client.run('mkfs.ext4 -q {0}1 -L backendfs'.format(hdd))
+            client.run('mkfs.ext4 -q {0}2 -L distribfs'.format(hdd))
+            client.run('mkfs.ext4 -q {0}3 -L tempfs'.format(hdd))
 
             extra_mountpoints = """
-LABEL=backendfs /mnt/bfs   ext4    defaults,nobootwait,noatime,discard    0    2
+LABEL=backendfs /mnt/bfs         ext4    defaults,nobootwait,noatime,discard    0    2
 LABEL=distribfs /mnt/dfs/local   ext4    defaults,nobootwait,noatime,discard    0    2
-LABEL=tempfs    /var/tmp   ext4    defaults,nobootwait,noatime,discard    0    2
+LABEL=tempfs    /var/tmp         ext4    defaults,nobootwait,noatime,discard    0    2
 """
 
             client.run('mkdir -p /mnt/bfs')

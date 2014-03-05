@@ -19,6 +19,7 @@ VPool module
 from ovs.dal.hybrids.vpool import VPool
 from ovs.extensions.hypervisor.factory import Factory
 from ovs.dal.lists.vmachinelist import VMachineList
+from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.celery import celery
 from ovs.lib.vmachine import VMachineController
 from ovs.extensions.fs.exportfs import Nfsexports
@@ -31,13 +32,17 @@ class VPoolController(object):
 
     @staticmethod
     @celery.task(name='ovs.vpool.mountpoint_available_from_voldrv')
-    def mountpoint_available_from_voldrv(mountpoint):
+    def mountpoint_available_from_voldrv(mountpoint, vsrid):
         """
         Hook for (re)exporting the NFS mountpoint
         """
-        nfs = Nfsexports()
-        nfs.unexport(mountpoint)
-        nfs.export(mountpoint)
+        vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+        if vsr is None:
+            raise RuntimeError('A VSR with id {0} could not be found.'.format(vsrid))
+        if vsr.serving_vmachine.pmachine.hvtype == 'VMWARE':
+            nfs = Nfsexports()
+            nfs.unexport(mountpoint)
+            nfs.export(mountpoint)
 
     @staticmethod
     @celery.task(name='ovs.vpool.sync_with_hypervisor')

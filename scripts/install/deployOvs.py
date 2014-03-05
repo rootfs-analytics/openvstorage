@@ -526,14 +526,12 @@ if __name__ == '__main__':
     if not ssds:
         print InstallHelper.boxed_message(['Not enough SSD devices available to continue the install. Min: 1'])
         sys.exit(1)
-    if not hdds:
-        print InstallHelper.boxed_message(['Not enough HDD devices available to continue the install. Min: 1'])
-        sys.exit(1)
     size = InstallHelper.ask_integer('Specify the size in GB (min: 50)', 50, 9999, default_value=100)
     disk_config = ''
     disk_config = vm_sys.create_vdisk(vm_name, 0, '{0}G'.format(size), disk_config)
     disk_config = vm_sys.create_vdisk_mapping(vm_name, 1, ssds[0], disk_config)
-    disk_config = vm_sys.create_vdisk_mapping(vm_name, 2, hdds[0], disk_config)
+    if len(hdds) > 0:
+        disk_config = vm_sys.create_vdisk_mapping(vm_name, 2, hdds[0], disk_config)
 
     # Add CD drive
     if imagefile:
