@@ -39,7 +39,8 @@
         "hypervisors": {
             "VMWARE": "VMware",
             "HYPERV": "HyperV",
-            "XEN": "Xen"
+            "XEN": "Xen",
+            "KVM": "KVM"
         },
         "username": "Username",
         "password": "Password",
