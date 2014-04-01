@@ -20,40 +20,40 @@ define([
     return function(guid) {
         var self = this;
 
-        // Variables
+        // Handles
         self.loadHandle             = undefined;
         self.loadVSAGuidHandle      = undefined;
         self.loadVMachineGuidHandle = undefined;
 
         // External dependencies
-        self.vsa            = ko.observable();
-        self.vMachine       = ko.observable();
-        self.vpool          = ko.observable();
+        self.vsa      = ko.observable();
+        self.vMachine = ko.observable();
+        self.vpool    = ko.observable();
 
         // Observables
         self.loading        = ko.observable(false);
         self.loaded         = ko.observable(false);
-
         self.guid           = ko.observable(guid);
         self.name           = ko.observable();
         self.order          = ko.observable(0);
         self.snapshots      = ko.observableArray([]);
-        self.size           = ko.smoothObservable(undefined, generic.formatBytes);
-        self.storedData     = ko.smoothObservable(undefined, generic.formatBytes);
-        self.cacheHits      = ko.smoothDeltaObservable();
-        self.cacheMisses    = ko.smoothDeltaObservable();
-        self.iops           = ko.smoothDeltaObservable(generic.formatNumber);
-        self.readSpeed      = ko.smoothDeltaObservable(generic.formatSpeed);
-        self.writeSpeed     = ko.smoothDeltaObservable(generic.formatSpeed);
-        self.backendReads   = ko.smoothObservable(undefined, generic.formatNumber);
-        self.backendWritten = ko.smoothObservable(undefined, generic.formatBytes);
-        self.backendRead    = ko.smoothObservable(undefined, generic.formatBytes);
-        self.bandwidthSaved = ko.smoothObservable(undefined, generic.formatBytes);
+        self.size           = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatBytes });
+        self.storedData     = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatBytes });
+        self.cacheHits      = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatNumber });
+        self.cacheMisses    = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatNumber });
+        self.iops           = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatNumber });
+        self.readSpeed      = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatSpeed });
+        self.writeSpeed     = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatSpeed });
+        self.backendReads   = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatNumber });
+        self.backendWritten = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatBytes });
+        self.backendRead    = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatBytes });
+        self.bandwidthSaved = ko.observable().extend({ smooth: {} }).extend({ format: generic.formatBytes });
         self.vsaGuid        = ko.observable();
         self.vpoolGuid      = ko.observable();
         self.vMachineGuid   = ko.observable();
         self.failoverMode   = ko.observable();
 
+        // Computed
         self.cacheRatio = ko.computed(function() {
             var total = (self.cacheHits.raw() || 0) + (self.cacheMisses.raw() || 0);
             if (total === 0) {
@@ -63,39 +63,30 @@ define([
         });
 
         // Functions
-        self.fetchVSAGuid = function() {
-            return $.Deferred(function(deferred) {
-                if (generic.xhrCompleted(self.loadVSAGuid)) {
-                    self.loadVSAGuid = api.get('vdisks/' + self.guid() + '/get_vsa')
-                        .done(function(data) {
-                            self.vsaGuid(data);
-                        })
-                        .always(deferred.resolve);
-                } else {
-                    deferred.reject();
-                }
-            }).promise();
-        };
         self.fillData = function(data) {
-            var stats = data.statistics,
-                statsTime = Math.round(stats.timestamp * 1000);
-            self.name(data.name);
-            self.iops({ value: stats.write_operations + stats.read_operations, timestamp: statsTime });
-            self.cacheHits({ value: stats.sco_cache_hits + stats.cluster_cache_hits, timestamp: statsTime });
-            self.cacheMisses({ value: stats.sco_cache_misses, timestamp: statsTime });
-            self.readSpeed({ value: stats.data_read, timestamp: statsTime });
-            self.writeSpeed({ value: stats.data_written, timestamp: statsTime });
-            self.backendWritten(stats.data_written);
-            self.backendRead(stats.data_read);
-            self.backendReads(stats.backend_read_operations);
-            self.bandwidthSaved(stats.data_read - stats.backend_data_read);
-            self.order(data.order);
-            self.snapshots(data.snapshots);
-            self.size(data.size);
-            self.storedData(data.info.stored);
-            self.failoverMode(data.info.failover_mode.toLowerCase() || 'unknown');
-            self.vpoolGuid(data.vpool_guid);
-            self.vMachineGuid(data.vmachine_guid);
+            generic.trySet(self.name, data, 'name');
+            generic.trySet(self.order, data, 'order');
+            generic.trySet(self.snapshots, data, 'snapshots');
+            generic.trySet(self.size, data, 'size');
+            generic.trySet(self.vpoolGuid, data, 'vpool_guid');
+            generic.trySet(self.vMachineGuid, data, 'vmachine_guid');
+            generic.trySet(self.vsaGuid, data, 'vsa_guid');
+            if (data.hasOwnProperty('info')) {
+                self.storedData(data.info.stored);
+                self.failoverMode(data.info.failover_mode.toLowerCase() || 'unknown');
+            }
+            if (data.hasOwnProperty('statistics')) {
+                var stats = data.statistics;
+                self.iops(stats.operations_ps);
+                self.cacheHits(stats.cache_hits_ps);
+                self.cacheMisses(stats.sco_cache_misses_ps);
+                self.readSpeed(stats.data_read_ps);
+                self.writeSpeed(stats.data_written_ps);
+                self.backendWritten(stats.data_written);
+                self.backendRead(stats.data_read);
+                self.backendReads(stats.backend_read_operations);
+                self.bandwidthSaved(stats.data_read - stats.backend_data_read);
+            }
 
             self.snapshots.sort(function(a, b) {
                 // Sorting based on newest first

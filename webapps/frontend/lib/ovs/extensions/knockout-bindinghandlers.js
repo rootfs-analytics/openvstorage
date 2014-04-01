@@ -89,7 +89,7 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
         update: function(element, valueAccessor) {
             var value, id, arc, percentage, color;
             value = valueAccessor();
-            if (value.primary.initialized()) {
+            if (!isNaN(value.primary.raw())) {
                 percentage = value.primary.raw();
                 id = $($(element).children()[0]).attr('id');
                 color = d3.scale.linear().domain([0, 50, 100]).range(['red', 'orange', 'green']);
@@ -104,10 +104,10 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
                     .attr('transform', 'translate(150, 160)');
                 d3.select('#' + id).select('.primary-text')
                     .text(value.primary());
-                if (value.secondary.initialized()) {
-                    d3.select('#' + id).select('.secondary-text')
-                        .text(value.secondary() + ' ' + $.t('ovs:generic.iops'));
-                }
+            }
+            if (!isNaN(value.secondary())) {
+                d3.select('#' + id).select('.secondary-text')
+                    .text(value.secondary() + ' ' + $.t('ovs:generic.iops'));
             }
         }
     };

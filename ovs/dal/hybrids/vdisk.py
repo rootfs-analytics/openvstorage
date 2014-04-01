@@ -16,9 +16,12 @@
 VDisk module
 """
 from ovs.dal.dataobject import DataObject
+from ovs.dal.datalist import DataList
+from ovs.dal.dataobjectlist import DataObjectList
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.hybrids.vpool import VPool
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
+from ovs.extensions.storage.volatilefactory import VolatileFactory
 import pickle
 import time
 
@@ -46,8 +49,9 @@ class VDisk(DataObject):
                   'parent_vdisk': (None, 'child_vdisks')}
     _expiry = {'snapshots':  (60, list),
                'info':       (60, dict),
-               'statistics':  (4, dict),
-               'vsrid':      (60, str)}
+               'statistics':  (5, dict),
+               'vsrid':      (60, str),
+               'vsa_guid':   (15, str)}
     # pylint: enable=line-too-long
 
     def __init__(self, *args, **kwargs):
@@ -57,7 +61,7 @@ class VDisk(DataObject):
         DataObject.__init__(self, *args, **kwargs)
         if self.vpool:
             self._frozen = False
-            self.vsr_client = VolumeStorageRouterClient().load(vpool=self.vpool)
+            self.vsr_client = VolumeStorageRouterClient().load(self.vpool)
             self._frozen = True
 
     def _snapshots(self):
@@ -76,10 +80,16 @@ class VDisk(DataObject):
                 # @todo: to be investigated howto handle during set as template
                 if snapshot.metadata:
                     metadata = pickle.loads(snapshot.metadata)
+                    try:
+                        stored = int(snapshot.stored)
+                    except ValueError:
+                        stored = 0
                     snapshots.append({'guid': guid,
                                       'timestamp': metadata['timestamp'],
                                       'label': metadata['label'],
-                                      'is_consistent': metadata['is_consistent']})
+                                      'is_consistent': metadata['is_consistent'],
+                                      'is_automatic': metadata.get('is_automatic', True),
+                                      'stored': stored})
         return snapshots
 
     def _info(self):
@@ -106,20 +116,42 @@ class VDisk(DataObject):
         """
         Fetches the Statistics for the vDisk.
         """
+        client = VolumeStorageRouterClient()
+        volatile = VolatileFactory.get_client()
+        prev_key = '%s_%s' % (self._key, 'statistics_previous')
+        # Load data from volumedriver
         if self.volumeid and self.vpool:
             try:
                 vdiskstats = self.vsr_client.statistics_volume(str(self.volumeid))
             except:
-                vdiskstats = VolumeStorageRouterClient().empty_statistics()
+                vdiskstats = client.empty_statistics()
         else:
-            vdiskstats = VolumeStorageRouterClient().empty_statistics()
-
+            vdiskstats = client.empty_statistics()
+        # Load volumedriver data in dictionary
         vdiskstatsdict = {}
         for key, value in vdiskstats.__class__.__dict__.items():
-            if type(value) is property:
+            if type(value) is property and key in client.stat_counters:
                 vdiskstatsdict[key] = getattr(vdiskstats, key)
-
+        # Precalculate sums
+        for key, items in client.stat_sums.iteritems():
+            vdiskstatsdict[key] = 0
+            for item in items:
+                vdiskstatsdict[key] += vdiskstatsdict[item]
         vdiskstatsdict['timestamp'] = time.time()
+        # Calculate delta's based on previously loaded dictionary
+        previousdict = volatile.get(prev_key, default={})
+        for key in vdiskstatsdict.keys():
+            if key in client.stat_keys:
+                delta = vdiskstatsdict['timestamp'] - previousdict.get('timestamp',
+                                                                       vdiskstatsdict['timestamp'])
+                if delta < 0:
+                    vdiskstatsdict['%s_ps' % key] = 0
+                elif delta == 0:
+                    vdiskstatsdict['%s_ps' % key] = previousdict.get('%s_ps' % key, 0)
+                else:
+                    vdiskstatsdict['%s_ps' % key] = (vdiskstatsdict[key] - previousdict[key]) / delta
+        volatile.set(prev_key, vdiskstatsdict, self._expiry['statistics'][0] * 10)
+        # Returning the dictionary
         return vdiskstatsdict
 
     def _vsrid(self):
@@ -127,3 +159,21 @@ class VDisk(DataObject):
         Returns the Volume Storage Router ID to which the vDisk is connected.
         """
         return self.info.get('vrouter_id', None)
+
+    def _vsa_guid(self):
+        """
+        Loads the vDisks VSA guid
+        """
+        if not self.vsrid:
+            return None
+        from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
+        volumestoragerouters = DataObjectList(
+            DataList({'object': VolumeStorageRouter,
+                      'data': DataList.select.DESCRIPTOR,
+                      'query': {'type': DataList.where_operator.AND,
+                                'items': [('vsrid', DataList.operator.EQUALS, self.vsrid)]}}).data,
+            VolumeStorageRouter
+        )
+        if len(volumestoragerouters) == 1:
+            return volumestoragerouters[0].serving_vmachine_guid
+        return None

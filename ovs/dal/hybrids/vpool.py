@@ -32,10 +32,11 @@ class VPool(DataObject):
                   'backend_login':      (None, str, 'Login/Username for the Storage Backend.'),
                   'backend_password':   (None, str, 'Password for the Storage Backend.'),
                   'backend_connection': (None, str, 'Connection (IP, URL, Domainname, Zone, ...) for the Storage Backend.'),
-                  'backend_type':       (None, ['S3', 'LOCAL', 'REST'], 'Type of the Storage Backend.')}
+                  'backend_type':       (None, ['CEPH_S3', 'AMAZON_S3', 'SWIFT_S3', 'LOCAL', 'REST'], 'Type of the Storage Backend.'),
+                  'backend_metadata':   (None, dict, 'Metadata for the backend, as used by the VolumeDriver.')}
     _relations = {}
     _expiry = {'status':        (10, str),
-               'statistics':     (4, dict),
+               'statistics':     (5, dict),
                'stored_data':   (60, int)}
     # pylint: enable=line-too-long
 
@@ -50,15 +51,16 @@ class VPool(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk served by the vPool.
         """
-        vdiskstats = VolumeStorageRouterClient().empty_statistics()
+        client = VolumeStorageRouterClient()
         vdiskstatsdict = {}
-        for key, value in vdiskstats.__class__.__dict__.items():
-            if type(value) is property:
-                vdiskstatsdict[key] = getattr(vdiskstats, key)
+        for key in client.stat_keys:
+            vdiskstatsdict[key] = 0
+            vdiskstatsdict['%s_ps' % key] = 0
         for disk in self.vdisks:
             statistics = disk._statistics()  # Prevent double caching
-            for key in vdiskstatsdict.iterkeys():
-                vdiskstatsdict[key] += statistics[key]
+            for key, value in statistics.iteritems():
+                if key != 'timestamp':
+                    vdiskstatsdict[key] += value
         vdiskstatsdict['timestamp'] = time.time()
         return vdiskstatsdict
 

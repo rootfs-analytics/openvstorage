@@ -15,6 +15,7 @@
 """
 This module contains generic hybrid serializers
 """
+from ovs.dal.relations.relations import RelationMapper
 from rest_framework import serializers
 
 
@@ -23,11 +24,11 @@ class SimpleSerializer(serializers.Serializer):
     Serializes only the guid of a hybrid object
     """
 
-    def __init__(self, hybrid, *args, **kwargs):
+    def __init__(self, hybrid, contents=None, *args, **kwargs):
         """
         Initializes the serializer
         """
-        _ = hybrid
+        _ = hybrid, contents
         super(SimpleSerializer, self).__init__(*args, **kwargs)
 
     guid = serializers.Field()
@@ -44,19 +45,29 @@ class FullSerializer(SimpleSerializer):
     """
     Serializes the persistent and dynamic stack of a hybrid object
     """
-    def __init__(self, hybrid, *args, **kwargs):
+    def __init__(self, hybrid, contents=None, *args, **kwargs):
         """
         Initializes the serializer, mapping field types
         """
-        super(FullSerializer, self).__init__(hybrid, *args, **kwargs)
+        super(FullSerializer, self).__init__(hybrid, contents, *args, **kwargs)
         self.hybrid = hybrid
         for key, default in self.hybrid._blueprint.iteritems():
             if not 'password' in key:
                 self.fields[key] = FullSerializer._map_type_to_field(default[1])
         for key in self.hybrid._expiry:
-            self.fields[key] = serializers.Field()
+            if contents is None or (('_dynamics' in contents or key in contents)
+                                    and '-{0}'.format(key) not in contents):
+                self.fields[key] = serializers.Field()
         for key in self.hybrid._relations:
-            self.fields['%s_guid' % key] = serializers.Field()
+            if contents is None or (('_relations' in contents or key in contents)
+                                    and '-{0}'.format(key) not in contents):
+                self.fields['%s_guid' % key] = serializers.Field()
+        relations = RelationMapper.load_foreign_relations(hybrid)
+        if relations is not None:
+            for key, info in relations.iteritems():
+                if contents is None or (('_relations' in contents or key in contents)
+                                        and '-{0}'.format(key) not in contents):
+                    self.fields['%s_guids' % key] = serializers.Field()
 
     def get_identity(self, data):
         """

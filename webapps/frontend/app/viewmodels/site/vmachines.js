@@ -11,27 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-/*global define, window */
+/*global define */
 define([
     'jquery', 'durandal/app', 'plugins/dialog', 'knockout',
     'ovs/shared', 'ovs/generic', 'ovs/refresher', 'ovs/api',
-    '../containers/vmachine', '../containers/vpool', '../wizards/rollback/index', '../wizards/snapshot/index'
-], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, VPool, RollbackWizard, SnapshotWizard) {
+    '../containers/vmachine', '../containers/vpool'
+], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, VPool) {
     "use strict";
     return function() {
         var self = this;
 
-        // System
-        self.shared      = shared;
-        self.guard       = { authenticated: true };
-        self.refresher   = new Refresher();
-        self.widgets     = [];
-        self.updateSort  = false;
-        self.sortTimeout = undefined;
-
-        // Data
+        // Variables
+        self.shared          = shared;
+        self.guard           = { authenticated: true };
+        self.refresher       = new Refresher();
+        self.widgets         = [];
+        self.vPoolCache      = {};
+        self.vsaCache        = {};
+        self.query           = {
+            query: {
+                type: 'AND',
+                items: [['is_internal', 'EQUALS', false],
+                        ['is_vtemplate', 'EQUALS', false],
+                        ['status', 'NOT_EQUALS', 'CREATED']]
+            }
+        };
         self.vMachineHeaders = [
-            { key: 'name',         value: $.t('ovs:generic.name'),       width: 150       },
+            { key: 'name',         value: $.t('ovs:generic.name'),       width: undefined },
             { key: 'vpool',        value: $.t('ovs:generic.vpool'),      width: 150       },
             { key: 'vsa',          value: $.t('ovs:generic.vsa'),        width: 100       },
             { key: undefined,      value: $.t('ovs:generic.vdisks'),     width: 60        },
@@ -40,48 +46,42 @@ define([
             { key: 'iops',         value: $.t('ovs:generic.iops'),       width: 55        },
             { key: 'readSpeed',    value: $.t('ovs:generic.read'),       width: 120       },
             { key: 'writeSpeed',   value: $.t('ovs:generic.write'),      width: 120       },
-            { key: 'failoverMode', value: $.t('ovs:generic.focstatus'),  width: undefined },
-            { key: undefined,      value: $.t('ovs:generic.actions'),    width: 100       }
+            { key: 'failoverMode', value: $.t('ovs:generic.focstatus'),  width: 50        }
         ];
-        self.vMachines = ko.observableArray([]);
-        self.vPoolCache = {};
-        self.vsaCache = {};
+
+        // Handles
+        self.loadVMachinesHandle = undefined;
+        self.refreshVMachinesHandle = {};
+
+        // Observables
+        self.vMachines            = ko.observableArray([]);
         self.vMachinesInitialLoad = ko.observable(true);
 
-        // Variables
-        self.loadVMachinesHandle = undefined;
-
         // Functions
-        self.fetchVMachines = function(full) {
-            full = full || false;
+        self.fetchVMachines = function() {
             return $.Deferred(function(deferred) {
                 if (generic.xhrCompleted(self.loadVMachinesHandle)) {
-                    var query = {
-                            query: {
-                                type: 'AND',
-                                items: [['is_internal', 'EQUALS', false],
-                                        ['is_vtemplate', 'EQUALS', false],
-                                        ['status', 'NOT_EQUALS', 'CREATED']]
-                            }
-                        }, filter = {};
-                    if (full) {
-                        filter.full = true;
-                    }
-                    self.loadVMachinesHandle = api.post('vmachines/filter', query, filter)
+                    var options = {
+                        sort: 'name',
+                        full: true,
+                        contents: ''
+                    };
+                    self.loadVMachinesHandle = api.post('vmachines/filter', self.query, options)
                         .done(function(data) {
-                            var i, guids = [], vmdata = {};
-                            for (i = 0; i < data.length; i += 1) {
-                                guids.push(data[i].guid);
-                                vmdata[data[i].guid] = data[i];
-                            }
+                            var guids = [], vmdata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vmdata[item.guid] = item;
+                            });
                             generic.crossFiller(
                                 guids, self.vMachines,
                                 function(guid) {
-                                    var vm = new VMachine(guid);
-                                    if (full) {
-                                        vm.fillData(vmdata[guid]);
+                                    var vmachine = new VMachine(guid);
+                                    if ($.inArray(guid, guids) !== -1) {
+                                        vmachine.fillData(vmdata[guid]);
                                     }
-                                    return vm;
+                                    vmachine.loading(true);
+                                    return vmachine;
                                 }, 'guid'
                             );
                             self.vMachinesInitialLoad(false);
@@ -93,135 +93,72 @@ define([
                 }
             }).promise();
         };
-        self.loadVMachine = function(vm, reduced) {
-            reduced = reduced || false;
+        self.refreshVMachines = function(page) {
             return $.Deferred(function(deferred) {
-                var calls = [vm.load(reduced)];
-                if (!reduced) {
-                    calls.push(vm.fetchVSAGuids());
-                    calls.push(vm.fetchVPoolGuids());
+                if (generic.xhrCompleted(self.refreshVMachinesHandle[page])) {
+                    var options = {
+                        sort: 'name',
+                        full: true,
+                        page: page,
+                        contents: '_dynamics,_relations,-snapshots,-hypervisor_status'
+                    };
+                    self.refreshVMachinesHandle[page] = api.post('vmachines/filter', self.query, options)
+                        .done(function(data) {
+                            var guids = [], vmdata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vmdata[item.guid] = item;
+                            });
+                            $.each(self.vMachines(), function(index, vm) {
+                                if ($.inArray(vm.guid(), guids) !== -1) {
+                                    vm.fillData(vmdata[vm.guid()]);
+                                    generic.crossFiller(
+                                        vm.vSAGuids, vm.vSAs,
+                                        function(guid) {
+                                            if (!self.vsaCache.hasOwnProperty(guid)) {
+                                                var vm = new VMachine(guid);
+                                                vm.load('');
+                                                self.vsaCache[guid] = vm;
+                                            }
+                                            return self.vsaCache[guid];
+                                        }, 'guid'
+                                    );
+                                    generic.crossFiller(
+                                        vm.vPoolGuids, vm.vPools,
+                                        function(guid) {
+                                            if (!self.vPoolCache.hasOwnProperty(guid)) {
+                                                var vp = new VPool(guid);
+                                                vp.load('');
+                                                self.vPoolCache[guid] = vp;
+                                            }
+                                            return self.vPoolCache[guid];
+                                        }, 'guid'
+                                    );
+                                }
+                            });
+                            deferred.resolve();
+                        })
+                        .fail(deferred.reject);
+                } else {
+                    deferred.resolve();
                 }
-                $.when.apply($, calls)
-                    .done(function() {
-                        // Merge in the VSAs
-                        generic.crossFiller(
-                            vm.vSAGuids, vm.vsas,
-                            function(guid) {
-                                if (!self.vsaCache.hasOwnProperty(guid)) {
-                                    var vm = new VMachine(guid);
-                                    vm.load();
-                                    self.vsaCache[guid] = vm;
-                                }
-                                return self.vsaCache[guid];
-                            }, 'guid'
-                        );
-                        // Merge in the vPools
-                        generic.crossFiller(
-                            vm.vPoolGuids, vm.vpools,
-                            function(guid) {
-                                if (!self.vPoolCache.hasOwnProperty(guid)) {
-                                    var vp = new VPool(guid);
-                                    vp.load();
-                                    self.vPoolCache[guid] = vp;
-                                }
-                                return self.vPoolCache[guid];
-                            }, 'guid'
-                        );
-                        // (Re)sort vMachines
-                        if (self.updateSort) {
-                            self.sort();
-                        }
-                    })
-                    .always(deferred.resolve);
             }).promise();
-        };
-        self.sort = function() {
-            if (self.sortTimeout) {
-                window.clearTimeout(self.sortTimeout);
-            }
-            self.sortTimeout = window.setTimeout(function() { generic.advancedSort(self.vMachines, ['name', 'guid']); }, 250);
-        };
-        self.rollback = function(guid) {
-            var i, vms = self.vMachines(), vm;
-            for (i = 0; i < vms.length; i += 1) {
-                if (vms[i].guid() === guid) {
-                    vm = vms[i];
-                }
-            }
-            if (vm !== undefined && !vm.isRunning()) {
-                dialog.show(new RollbackWizard({
-                    modal: true,
-                    type: 'vmachine',
-                    guid: guid
-                }));
-            }
-        };
-        self.snapshot = function(guid) {
-            dialog.show(new SnapshotWizard({
-                modal: true,
-                machineguid: guid
-            }));
-        };
-        self.setAsTemplate = function(guid) {
-            var i, vms = self.vMachines(), vm;
-            for (i = 0; i < vms.length; i += 1) {
-                if (vms[i].guid() === guid) {
-                    vm = vms[i];
-                }
-            }
-            if (vm !== undefined && !vm.isRunning()) {
-                app.showMessage(
-                        $.t('ovs:vmachines.setastemplate.warning'),
-                        $.t('ovs:vmachines.setastemplate.title', { what: vm.name() }),
-                        [$.t('ovs:vmachines.setastemplate.no'), $.t('ovs:vmachines.setastemplate.yes')]
-                    )
-                    .done(function(answer) {
-                        if (answer === $.t('ovs:vmachines.setastemplate.yes')) {
-                            generic.alertInfo(
-                                $.t('ovs:vmachines.setastemplate.marked'),
-                                $.t('ovs:vmachines.setastemplate.markedmsg', { what: vm.name() })
-                            );
-                            api.post('vmachines/' + vm.guid() + '/set_as_template')
-                                .then(self.shared.tasks.wait)
-                                .done(function() {
-                                    self.vMachines.destroy(vm);
-                                    generic.alertSuccess(
-                                        $.t('ovs:vmachines.setastemplate.done'),
-                                        $.t('ovs:vmachines.setastemplate.donemsg', { what: vm.name() })
-                                    );
-                                })
-                                .fail(function(error) {
-                                    generic.alertError(
-                                        $.t('ovs:generic.error'),
-                                        $.t('ovs:generic.messages.errorwhile', {
-                                            context: 'error',
-                                            what: $.t('ovs:vmachines.setastemplate.errormsg', { what: vm.name() }),
-                                            error: error
-                                        })
-                                    );
-                                });
-                        }
-                    });
-            }
         };
 
         // Durandal
         self.activate = function() {
             self.refresher.init(self.fetchVMachines, 5000);
+            self.refresher.start();
             self.shared.footerData(self.vMachines);
 
-            self.fetchVMachines(true)
-                .always(function() {
-                    self.sort();
-                    self.updateSort = true;
-                    self.refresher.start();
-                });
+            self.fetchVMachines().then(function() {
+                self.refreshVMachines(1);
+            });
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

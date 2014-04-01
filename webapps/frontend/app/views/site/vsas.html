@@ -15,8 +15,8 @@ limitations under the License.
 -->
 <section>
     <h2 data-i18n="ovs:vsas.title"></h2>
-    <div data-bind="pager: { items: vSAs, headers: vSAsHeaders, pagesize: 10, key: 'guid', initialLoad: vSAsInitialLoad,
-                             enterViewport: loadVSA, viewportRefresh: 5000, controls: true }">
+    <div data-bind="pager: { items: vSAs, headers: vSAsHeaders, initialLoad: vSAsInitialLoad,
+                             viewportRefresh: refreshVSAs, viewportRefreshInterval: 5000, controls: true }">
         <table data-dummy="dummy">
             <tr data-part="vitem" data-bind="attr: { id: 'vsa_' + guid() }">
                 <td>
@@ -43,9 +43,9 @@ limitations under the License.
                 <td><span data-bind="text: vDisks().length"></span></td>
                 <td><span data-bind="text: storedData"></span></td>
                 <td><span data-bind="text: cacheRatio"></span></td>
-                <td data-bind="lazyloader: { item: iops }"></td>
-                <td data-bind="lazyloader: { item: readSpeed }"></td>
-                <td data-bind="lazyloader: { item: writeSpeed }"></td>
+                <td><span data-bind="text: iops"></span></td>
+                <td><span data-bind="text: readSpeed"></span></td>
+                <td><span data-bind="text: writeSpeed"></span></td>
             </tr>
         </table>
     </div>

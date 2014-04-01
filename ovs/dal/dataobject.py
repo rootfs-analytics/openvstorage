@@ -135,10 +135,10 @@ class DataObject(object):
         self._mutex_listcache = VolatileMutex('listcache_%s' % self._name)
 
         # Init guid
-        new = False
+        self._new = False
         if guid is None:
             self._guid = str(uuid.uuid4())
-            new = True
+            self._new = True
         else:
             self._guid = str(guid)
 
@@ -149,7 +149,7 @@ class DataObject(object):
         self._volatile = VolatileFactory.get_client()
         self._persistent = PersistentFactory.get_client()
         self._metadata['cache'] = None
-        if new:
+        if self._new:
             self._data = {}
         else:
             self._data = self._volatile.get(self._key)
@@ -172,7 +172,7 @@ class DataObject(object):
 
         # Add properties where appropriate, hooking in the correct dictionary
         for attribute, default in self._blueprint.iteritems():
-            self._add_sproperty(attribute, self._data[attribute])
+            self._add_blueprint_property(attribute, self._data[attribute])
 
         # Load relations
         for attribute, relation in self._relations.iteritems():
@@ -182,11 +182,11 @@ class DataObject(object):
                 else:
                     cls = relation[0]
                 self._data[attribute] = Descriptor(cls).descriptor
-            self._add_cproperty(attribute, self._data[attribute])
+            self._add_relation_property(attribute, self._data[attribute])
 
         # Add wrapped properties
         for attribute, expiry in self._expiry.iteritems():
-            self._add_dproperty(attribute)
+            self._add_dynamic_property(attribute)
 
         # Load foreign keys
         relations = RelationMapper.load_foreign_relations(self.__class__)
@@ -194,12 +194,12 @@ class DataObject(object):
             for key, info in relations.iteritems():
                 self._objects[key] = {'info': info,
                                       'data': None}
-                self._add_lproperty(key)
+                self._add_list_property(key)
 
         # Store original data
         self._original = copy.deepcopy(self._data)
 
-        if not new:
+        if not self._new:
             # Re-cache the object
             self._volatile.set(self._key, self._data)
 
@@ -215,56 +215,58 @@ class DataObject(object):
     ## Helper methods for dynamic getting and setting
     #######################
 
-    def _add_sproperty(self, attribute, value):
+    def _add_blueprint_property(self, attribute, value):
         """
         Adds a simple property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_sproperty(attribute)
-        fset = lambda s, v: s._set_sproperty(attribute, v)
+        fget = lambda s: s._get_blueprint_property(attribute)
+        fset = lambda s, v: s._set_blueprint_property(attribute, v)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget, fset))
         self._data[attribute] = value
 
-    def _add_cproperty(self, attribute, value):
+    def _add_relation_property(self, attribute, value):
         """
         Adds a complex property to the object (hybrids)
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_cproperty(attribute)
-        fset = lambda s, v: s._set_cproperty(attribute, v)
-        gget = lambda s: s._get_gproperty(attribute)
+        fget = lambda s: s._get_relation_property(attribute)
+        fset = lambda s, v: s._set_relation_property(attribute, v)
+        gget = lambda s: s._get_guid_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget, fset))
         setattr(self.__class__, '%s_guid' % attribute, property(gget))
         self._data[attribute] = value
 
-    def _add_lproperty(self, attribute):
+    def _add_list_property(self, attribute):
         """
         Adds a list (readonly) property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_lproperty(attribute)
+        fget = lambda s: s._get_list_property(attribute)
+        gget = lambda s: s._get_list_guid_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget))
+        setattr(self.__class__, '%s_guids' % attribute, property(gget))
 
-    def _add_dproperty(self, attribute):
+    def _add_dynamic_property(self, attribute):
         """
         Adds a dynamic property to the object
         """
         # pylint: disable=protected-access
-        fget = lambda s: s._get_dproperty(attribute)
+        fget = lambda s: s._get_dynamic_property(attribute)
         # pylint: enable=protected-access
         setattr(self.__class__, attribute, property(fget))
 
     # Helper method spporting property fetching
-    def _get_sproperty(self, attribute):
+    def _get_blueprint_property(self, attribute):
         """
         Getter for a simple property
         """
         return self._data[attribute]
 
-    def _get_cproperty(self, attribute):
+    def _get_relation_property(self, attribute):
         """
         Getter for a complex property (hybrid)
         It will only load the object once and caches it for the lifetime of this object
@@ -274,13 +276,13 @@ class DataObject(object):
             self._objects[attribute] = descriptor.get_object(instantiate=True)
         return self._objects[attribute]
 
-    def _get_gproperty(self, attribute):
+    def _get_guid_property(self, attribute):
         """
         Getter for a foreign key property
         """
         return self._data[attribute]['guid']
 
-    def _get_lproperty(self, attribute):
+    def _get_list_property(self, attribute):
         """
         Getter for the list property
         It will execute the related query every time to return a list of hybrid objects that
@@ -290,21 +292,21 @@ class DataObject(object):
         info = self._objects[attribute]['info']
         remote_class = Descriptor().load(info['class']).get_object()
         remote_key   = info['key']
-        # pylint: disable=line-too-long
-        datalist = DataList(query = {'object': remote_class,
-                                     'data': DataList.select.DESCRIPTOR,
-                                     'query': {'type': DataList.where_operator.AND,
-                                               'items': [('%s.guid' % remote_key, DataList.operator.EQUALS, self.guid)]}},  # noqa
-                            key   = '%s_%s_%s' % (self._name, self._guid, attribute))
-        # pylint: enable=line-too-long
-
+        datalist = DataList.get_relation_set(remote_class, remote_key, self.__class__, attribute, self.guid)
         if self._objects[attribute]['data'] is None:
             self._objects[attribute]['data'] = DataObjectList(datalist.data, remote_class)
         else:
             self._objects[attribute]['data'].merge(datalist.data)
         return self._objects[attribute]['data']
 
-    def _get_dproperty(self, attribute):
+    def _get_list_guid_property(self, attribute):
+        """
+        Getter for guid list property
+        """
+        dataobjectlist = getattr(self, attribute)
+        return dataobjectlist._guids
+
+    def _get_dynamic_property(self, attribute):
         """
         Getter for dynamic property, wrapping the internal data loading property
         in a caching layer
@@ -313,7 +315,7 @@ class DataObject(object):
         return self._backend_property(data_loader, attribute)
 
     # Helper method supporting property setting
-    def _set_sproperty(self, attribute, value):
+    def _set_blueprint_property(self, attribute, value):
         """
         Setter for a simple property that will validate the type
         """
@@ -328,7 +330,7 @@ class DataObject(object):
                 raise TypeError('Property %s allows types %s. %s given'
                                 % (attribute, str(allowed_types), given_type))
 
-    def _set_cproperty(self, attribute, value):
+    def _set_relation_property(self, attribute, value):
         """
         Setter for a complex property (hybrid) that will validate the type
         """
@@ -389,16 +391,20 @@ class DataObject(object):
                         for item in getattr(self, key).iterloaded():
                             item.save(recursive=True, skip=info['key'])
 
-        new = False
         try:
             data = self._persistent.get(self._key)
         except KeyNotFoundException:
-            new = True
-            data = {}
+            if self._new:
+                data = {}
+            else:
+                raise ObjectNotFoundException('%s with guid \'%s\' was deleted' %
+                                              (self.__class__.__name__, self._guid))
+        changed_fields = []
         data_conflicts = []
         for attribute in self._data.keys():
             if self._data[attribute] != self._original[attribute]:
                 # We changed this value
+                changed_fields.append(attribute)
                 if attribute in data and self._original[attribute] != data[attribute]:
                     # Some other process also wrote to the database
                     if self._datastore_wins is None:
@@ -445,22 +451,11 @@ class DataObject(object):
             self._mutex_listcache.acquire(60)
             cache_key = '%s_%s' % (DataList.cachelink, self._name)
             cache_list = Toolbox.try_get(cache_key, {})
-            for field in cache_list.keys():
-                clear = False
-                if field == '__all' and new:  # This is a no-filter query hook, which can be ignored
-                    clear = True
-                if field in self._blueprint:
-                    if self._original[field] != self._data[field]:
-                        clear = True
-                if field in self._relations:
-                    if self._original[field]['guid'] != self._data[field]['guid']:
-                        clear = True
-                if field in self._expiry:
-                    clear = True
-                if clear:
-                    for list_key in cache_list[field]:
-                        self._volatile.delete(list_key)
-                    del cache_list[field]
+            for list_key in cache_list.keys():
+                fields = cache_list[list_key]
+                if ('__all' in fields and self._new) or list(set(fields) & set(changed_fields)):
+                    self._volatile.delete(list_key)
+                    del cache_list[list_key]
             self._volatile.set(cache_key, cache_list)
             self._persistent.set(cache_key, cache_list)
         finally:
@@ -472,6 +467,7 @@ class DataObject(object):
 
         self._original = copy.deepcopy(self._data)
         self.dirty = False
+        self._new = False
 
     #######################
     ## Other CRUDs
@@ -488,9 +484,12 @@ class DataObject(object):
                 items = getattr(self, key)
                 if len(items) > 0:
                     if abandon is True:
-                        for item in items:
+                        for item in items.itersafe():
                             setattr(item, info['key'], None)
-                            item.save()
+                            try:
+                                item.save()
+                            except ObjectNotFoundException:
+                                pass
                     else:
                         raise LinkedObjectException('There are %s items left in self.%s' %
                                                     (len(items), key))
@@ -500,12 +499,13 @@ class DataObject(object):
             self._mutex_listcache.acquire(60)
             cache_key = '%s_%s' % (DataList.cachelink, self._name)
             cache_list = Toolbox.try_get(cache_key, {})
-            if '__all' in cache_list.keys():
-                for list_key in cache_list['__all']:
+            for list_key in cache_list.keys():
+                fields = cache_list[list_key]
+                if '__all' in fields:
                     self._volatile.delete(list_key)
-                del cache_list['__all']
-                self._volatile.set(cache_key, cache_list)
-                self._persistent.set(cache_key, cache_list)
+                    del cache_list[list_key]
+            self._volatile.set(cache_key, cache_list)
+            self._persistent.set(cache_key, cache_list)
         finally:
             self._mutex_listcache.release()
 

@@ -15,23 +15,27 @@
 define([
     'jquery', 'durandal/app', 'plugins/dialog', 'knockout',
     'ovs/shared', 'ovs/generic', 'ovs/refresher', 'ovs/api',
-    '../containers/vmachine', '../containers/pmachine'
-], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, PMachine) {
+    '../containers/vmachine', '../containers/pmachine', '../containers/vpool'
+], function($, app, dialog, ko, shared, generic, Refresher, api, VMachine, PMachine, VPool) {
     "use strict";
     return function() {
         var self = this;
 
-        // System
-        self.shared = shared;
-        self.guard = { authenticated: true };
-        self.refresher = new Refresher();
-        self.widgets = [];
+        // Variables
+        self.shared           = shared;
+        self.guard            = { authenticated: true };
+        self.refresher        = new Refresher();
+        self.widgets          = [];
+        self.pMachineCache    = {};
+        self.vPoolCache       = {};
+        self.vMachineCache    = {};
+        self.loadVPoolsHandle = undefined;
 
-        // Data
-        self.VSA = ko.observable();
-        self.pMachineCache = {};
-        self.vPoolCache = {};
-        self.vMachineCache = {};
+        // Observables
+        self.VSA               = ko.observable();
+        self.vPoolsLoaded      = ko.observable(false);
+        self.vPools            = ko.observableArray([]);
+        self.checkedVPoolGuids = ko.observableArray([]);
 
         // Functions
         self.load = function() {
@@ -39,9 +43,13 @@ define([
                 var vsa = self.VSA();
                 $.when.apply($, [
                         vsa.load(),
-                        vsa.fetchServedChildren()
+                        vsa.fetchServedChildren(),
+                        vsa.loadDisks(),
+                        vsa.getAvailableActions()
                     ])
+                    .then(self.loadVPools)
                     .done(function() {
+                        self.checkedVPoolGuids(self.VSA().vPoolGuids);
                         var pMachineGuid = vsa.pMachineGuid(), pm;
                         if (pMachineGuid && (vsa.pMachine() === undefined || vsa.pMachine().guid() !== pMachineGuid)) {
                             if (!self.pMachineCache.hasOwnProperty(pMachineGuid)) {
@@ -52,13 +60,43 @@ define([
                             vsa.pMachine(self.pMachineCache[pMachineGuid]);
                         }
                         // Move child guids to the observables for easy display
-                        vsa.vpools(vsa.vPoolGuids);
+                        vsa.vPools(vsa.vPoolGuids);
                         vsa.vMachines(vsa.vMachineGuids);
                     })
                     .always(deferred.resolve);
             }).promise();
         };
-
+        self.loadVPools = function() {
+            return $.Deferred(function(deferred) {
+                if (generic.xhrCompleted(self.loadVPoolsHandle)) {
+                    self.loadVPoolsHandle = api.get('vpools', undefined, {
+                        sort: 'name',
+                        full: true,
+                        contents: ''
+                    })
+                        .done(function(data) {
+                            var guids = [], vpdata = {};
+                            $.each(data, function(index, item) {
+                                guids.push(item.guid);
+                                vpdata[item.guid] = item;
+                            });
+                            generic.crossFiller(
+                                guids, self.vPools,
+                                function(guid) {
+                                    var vpool = new VPool(guid);
+                                    vpool.fillData(vpdata[guid]);
+                                    return vpool;
+                                }, 'guid'
+                            );
+                            self.vPoolsLoaded(true);
+                            deferred.resolve();
+                        })
+                        .fail(deferred.reject);
+                } else {
+                    deferred.reject();
+                }
+            }).promise();
+        };
         self.moveAway = function() {
             app.showMessage(
                     $.t('ovs:vsas.detail.moveaway.warning'),
@@ -92,6 +130,9 @@ define([
                     }
                 });
         };
+        self.updateVSAServing = function() {
+            generic.alertError('Not implemented', 'This functionality is not implemented.');
+        };
 
         // Durandal
         self.activate = function(mode, guid) {
@@ -102,10 +143,9 @@ define([
             self.shared.footerData(self.VSA);
         };
         self.deactivate = function() {
-            var i;
-            for (i = 0; i < self.widgets.length; i += 2) {
-                self.widgets[i].deactivate();
-            }
+            $.each(self.widgets, function(index, item) {
+                item.deactivate();
+            });
             self.refresher.stop();
             self.shared.footerData(ko.observable());
         };

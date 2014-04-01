@@ -23,16 +23,17 @@ from rest_framework.decorators import action, link
 from rest_framework.exceptions import NotAcceptable
 from django.http import Http404
 from ovs.dal.lists.vmachinelist import VMachineList
-from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.hybrids.pmachine import PMachine
+from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.datalist import DataList
 from ovs.dal.dataobjectlist import DataObjectList
 from ovs.lib.vmachine import VMachineController
 from ovs.lib.volumestoragerouter import VolumeStorageRouterController
 from ovs.dal.exceptions import ObjectNotFoundException
-from backend.serializers.serializers import SimpleSerializer, FullSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose, validate
+from backend.toolbox import Toolbox
 
 
 class VMachineViewSet(viewsets.ViewSet):
@@ -48,14 +49,20 @@ class VMachineViewSet(viewsets.ViewSet):
         Overview of all machines
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            vmachines = VMachineList.get_vmachines()
-            serializer = FullSerializer
+        vpoolguid = request.QUERY_PARAMS.get('vpoolguid', None)
+        if vpoolguid is not None:
+            vpool = VPool(vpoolguid)
+            vmachine_guids = []
+            vmachines = []
+            for vdisk in vpool.vdisks:
+                if vdisk.vmachine_guid is not None and vdisk.vmachine_guid not in vmachine_guids:
+                    vmachine_guids.append(vdisk.vmachine.guid)
+                    if vdisk.vmachine.is_internal is False and vdisk.vmachine.is_vtemplate is False:
+                        vmachines.append(vdisk.vmachine)
         else:
-            vmachines = VMachineList.get_vmachines().reduced
-            serializer = SimpleSerializer
-        serialized = serializer(VMachine, instance=vmachines, many=True)
+            vmachines = VMachineList.get_vmachines()
+        vmachines, serializer, contents = Toolbox.handle_list(vmachines, request, default_sort='name,vpool_guid')
+        serialized = serializer(VMachine, contents=contents, instance=vmachines, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
     @expose(internal=True, customer=True)
@@ -65,8 +72,8 @@ class VMachineViewSet(viewsets.ViewSet):
         """
         Load information about a given vMachine
         """
-        _ = request
-        return Response(FullSerializer(VMachine, instance=obj).data, status=status.HTTP_200_OK)
+        contents = Toolbox.handle_retrieve(request)
+        return Response(FullSerializer(VMachine, contents=contents, instance=obj).data, status=status.HTTP_200_OK)
 
     @action()
     @expose(internal=True, customer=True)
@@ -96,24 +103,9 @@ class VMachineViewSet(viewsets.ViewSet):
         is_consistent = True if request.DATA['consistent'] else False  # Assure boolean type
         task = VMachineController.snapshot.delay(machineguid=obj.guid,
                                                  label=label,
-                                                 is_consistent=is_consistent)
+                                                 is_consistent=is_consistent,
+                                                 is_automatic=False)
         return Response(task.id, status=status.HTTP_200_OK)
-
-    @link()
-    @expose(internal=True)
-    @required_roles(['view'])
-    @validate(VMachine)
-    def get_vsas(self, request, obj):
-        """
-        Returns a list of VSA vMachine guids
-        """
-        _ = request
-        vsa_vmachine_guids = []
-        for vdisk in obj.vdisks:
-            if vdisk.vsrid:
-                vsr = VolumeStorageRouterList.get_by_vsrid(vdisk.vsrid)
-                vsa_vmachine_guids.append(vsr.serving_vmachine.guid)
-        return Response(vsa_vmachine_guids, status=status.HTTP_200_OK)
 
     @link()
     @expose(internal=True)
@@ -131,24 +123,10 @@ class VMachineViewSet(viewsets.ViewSet):
         for vsr in obj.served_vsrs:
             vpool_guids.add(vsr.vpool_guid)
             for vdisk in vsr.vpool.vdisks:
-                if vdisk.vmachine_guid is not None:
+                if vdisk.vsrid == vsr.vsrid and vdisk.vmachine_guid is not None:
                     vmachine_guids.add(vdisk.vmachine_guid)
         return Response({'vpool_guids': list(vpool_guids),
                          'vmachine_guids': list(vmachine_guids)}, status=status.HTTP_200_OK)
-
-    @link()
-    @expose(internal=True)
-    @required_roles(['view'])
-    @validate(VMachine)
-    def get_vpools(self, request, obj):
-        """
-        Returns the vPool guid(s) associated with the given vMachine
-        """
-        _ = request
-        vpool_guids = []
-        for vdisk in obj.vdisks:
-            vpool_guids.append(vdisk.vpool.guid)
-        return Response(vpool_guids, status=status.HTTP_200_OK)
 
     @link()
     @expose(internal=True)
@@ -160,6 +138,8 @@ class VMachineViewSet(viewsets.ViewSet):
         """
         _ = request
         children_vmachine_guids = set()
+        if obj.is_vtemplate is False:
+            raise NotAcceptable('vMachine is not a vTemplate')
         for vdisk in obj.vdisks:
             for cdisk in vdisk.child_vdisks:
                 children_vmachine_guids.add(cdisk.vmachine_guid)
@@ -175,14 +155,9 @@ class VMachineViewSet(viewsets.ViewSet):
         query_result = DataList({'object': VMachine,
                                  'data': DataList.select.DESCRIPTOR,
                                  'query': request.DATA['query']}).data
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            vmachines = DataObjectList(query_result, VMachine)
-            serializer = FullSerializer
-        else:
-            vmachines = DataObjectList(query_result, VMachine).reduced
-            serializer = SimpleSerializer
-        serialized = serializer(VMachine, instance=vmachines, many=True)
+        vmachines = DataObjectList(query_result, VMachine)
+        vmachines, serializer, contents = Toolbox.handle_list(vmachines, request)
+        serialized = serializer(VMachine, contents=contents, instance=vmachines, many=True)
         return Response(serialized.data, status=status.HTTP_200_OK)
 
     @action()
@@ -279,3 +254,19 @@ class VMachineViewSet(viewsets.ViewSet):
             pmachine_guids.add(vsr.serving_vmachine.pmachine_guid)
         guids = [{'guid': guid} for guid in pmachine_guids]
         return Response(guids, status=status.HTTP_200_OK)
+
+    @link()
+    @expose(internal=True)
+    @required_roles(['view'])
+    @validate(VMachine)
+    def get_available_actions(self, request, obj):
+        """
+        Gets a list of all available actions
+        """
+        _ = request
+        actions = []
+        if obj.is_internal and not obj.is_vtemplate:
+            vsas = VMachineList.get_vsas()
+            if len(vsas) > 1:
+                actions.append('MOVE_AWAY')
+        return Response(actions, status=status.HTTP_200_OK)

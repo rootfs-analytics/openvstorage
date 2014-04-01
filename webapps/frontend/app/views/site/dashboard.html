@@ -85,7 +85,7 @@ limitations under the License.
                 <!-- vMachines -->
                 <div class="panel-heading">
                     <b data-i18n="ovs:dashboard.panels.vmachines.title"></b>
-                    <a data-bind="text: vMachines().length,
+                    <a data-bind="text: vMachineGuids().length,
                                   attr: { href: $root.shared.routing.loadHash('vmachines', {}) }"
                        class="label label-default" style="margin-left: 5px;"></a>
                     <div style="float:right;">
@@ -100,14 +100,12 @@ limitations under the License.
                         </span>
                     </div>
                 </div>
-                <div class="panel-body" data-bind="foreach: topVmachines">
+                <div class="panel-body" data-bind="foreach: topVMachines">
                     <div class="row">
                         <div class="col-md-8"><span data-bind="text: name"></span></div>
                         <div class="col-md-4">
-                            <span data-bind="visible: $parent.topVmachineMode() === 'topstoreddata',
-                                             text: storedData"></span>
-                            <span data-bind="visible: $parent.topVmachineMode() === 'topbandwidth',
-                                             lazyloader: { item: bandwidth }"></span>
+                            <span data-bind="visible: $parent.topVmachineMode() === 'topstoreddata', text: storedData"></span>
+                            <span data-bind="visible: $parent.topVmachineMode() === 'topbandwidth', text: bandwidth"></span>
                         </div>
                     </div>
                  </div>
@@ -139,19 +137,19 @@ limitations under the License.
                         <tbody>
                             <tr>
                                 <td data-i18n="ovs:generic.iops"></td>
-                                <td data-bind="lazyloader: { item: iops }"></td>
+                                <td data-bind="text: iops"></td>
                             </tr>
                             <tr>
                                 <td data-i18n="ovs:generic.readspeed"></td>
-                                <td data-bind="lazyloader: { item: readSpeed }"></td>
+                                <td data-bind="text: readSpeed"></td>
                             </tr>
                             <tr>
                                 <td data-i18n="ovs:generic.writespeed"></td>
-                                <td data-bind="lazyloader: { item: writeSpeed }"></td>
+                                <td data-bind="text: writeSpeed"></td>
                             </tr>
                             <tr>
                                 <td data-i18n="ovs:generic.cacheratio"></td>
-                                <td data-bind="lazyloader: { item: cacheRatio }"></td>
+                                <td data-bind="text: cacheRatio"></td>
                             </tr>
                         </tbody>
                     </table>
@@ -181,8 +179,8 @@ limitations under the License.
                         <div class="col-md-8"><a data-bind="attr: { href: $root.shared.routing.loadHash('vpool-detail', { guid: guid }) },
                                                             text: name"></a></div>
                         <div class="col-md-4">
-                            <span data-bind="visible: $parent.topVPoolMode() === 'topstoreddata', lazyloader: { item: storedData }"></span>
-                            <span data-bind="visible: $parent.topVPoolMode() === 'topbandwidth', lazyloader: { item: bandwidth }"></span>
+                            <span data-bind="visible: $parent.topVPoolMode() === 'topstoreddata', text: storedData"></span>
+                            <span data-bind="visible: $parent.topVPoolMode() === 'topbandwidth', text: bandwidth"></span>
                         </div>
                     </div>
                  </div>

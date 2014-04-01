@@ -344,6 +344,7 @@ class Basic(TestCase):
                     or prop in ['%s_guid' % key for key in cls._relations.keys()] \
                     or prop in cls._expiry \
                     or prop in remote_properties \
+                    or prop in ['%s_guids' % key for key in remote_properties] \
                     or prop == 'guid'
                 if not found:
                     missing_metadata.append(prop)
@@ -915,13 +916,94 @@ class Basic(TestCase):
         """
         machine = TestMachine()
         machine.save()
-        disk = TestDisk()
-        disk.machine = machine
-        disk.save()
+        disk_1 = TestDisk()
+        disk_1.machine = machine
+        disk_1.save()
+        disk_2 = TestDisk()
+        disk_2.machine = machine
+        disk_2.save()
         self.assertRaises(LinkedObjectException, machine.delete)
-        disk_1 = TestDisk(disk.guid)
-        self.assertIsNotNone(disk_1.machine, 'The machine should still be linked')
-        machine.delete(abandon=True)
-        disk_2 = TestDisk(disk.guid)
-        self.assertIsNone(disk_2.machine, 'The machine should be unlinked')
+        disk_3 = TestDisk(disk_1.guid)
+        self.assertIsNotNone(disk_3.machine, 'The machine should still be linked')
+        _ = machine.disks  # Make sure we loaded the list
+        disk_2.delete()
+        machine.delete(abandon=True)  # Should not raise due to disk_2 being deleted
+        disk_4 = TestDisk(disk_1.guid)
+        self.assertIsNone(disk_4.machine, 'The machine should be unlinked')
+        disk_1.delete()
+
+    def test_save_deleted(self):
+        """
+        Validates whether saving a previously deleted object raises
+        """
+        disk = TestDisk()
+        disk.save()
         disk.delete()
+        self.assertRaises(ObjectNotFoundException, disk.save, 'Cannot resave a deleted object')
+
+    def test_dol_advanced(self):
+        """
+        Validates the DataObjectList advanced functions (indexer, sort)
+        """
+        sizes = [7, 2, 0, 4, 6, 1, 5, 9, 3, 8]
+        guids = []
+        for i in xrange(0, 10):
+            disk = TestDisk()
+            disk.name = 'disk_%d' % i
+            disk.size = sizes[i]
+            disk.save()
+            guids.append(disk.guid)
+        data = DataList({'object': TestDisk,
+                         'data': DataList.select.DESCRIPTOR,
+                         'query': {'type': DataList.where_operator.AND,
+                                   'items': []}}).data
+        disks = DataObjectList(data, TestDisk)
+        disks.sort()
+        guids.sort()
+        self.assertEqual(disks[0].guid, guids[0], 'Disks should be sorted on guid')
+        self.assertEqual(disks[4].guid, guids[4], 'Disks should be sorted on guid')
+        disks.sort(cmp=lambda a, b: a.size - b.size)
+        self.assertEqual(disks[0].size, 0, 'Disks should be sorted on size')
+        self.assertEqual(disks[4].size, 4, 'Disks should be sorted on size')
+        disks.sort(key=lambda a: a.name)
+        self.assertEqual(disks[0].name, 'disk_0', 'Disks should be sorted on name')
+        self.assertEqual(disks[4].name, 'disk_4', 'Disks should be sorted on name')
+        filtered = disks[1:4]
+        self.assertEqual(filtered[0].name, 'disk_1', 'Disks should be properly sliced')
+        self.assertEqual(filtered[2].name, 'disk_3', 'Disks should be properly sliced')
+        for disk in disks:
+            disk.delete()
+
+    def test_fullrelation_load(self):
+        """
+        Validates whether a single relation load will preload all other related relations
+        """
+        machine_1 = TestMachine()
+        machine_1.save()
+        disk_1_1 = TestDisk()
+        disk_1_1.machine = machine_1
+        disk_1_1.save()
+        disk_1_2 = TestDisk()
+        disk_1_2.machine = machine_1
+        disk_1_2.save()
+        machine_2 = TestMachine()
+        machine_2.save()
+        disk_2_1 = TestDisk()
+        disk_2_1.machine = machine_2
+        disk_2_1.save()
+        disk_2_2 = TestDisk()
+        disk_2_2.machine = machine_2
+        disk_2_2.save()
+        # Load relations
+        disks_1 = DataList.get_relation_set(TestDisk, 'machine', TestMachine, 'disks', machine_1.guid)
+        self.assertEqual(len(disks_1.data), 2, 'There should be 2 child disks')
+        self.assertFalse(disks_1.from_cache, 'The relation should not be loaded from cache')
+        disks_2 = DataList.get_relation_set(TestDisk, 'machine', TestMachine, 'disks', machine_2.guid)
+        self.assertEqual(len(disks_2.data), 2, 'There should be 2 child disks')
+        self.assertTrue(disks_2.from_cache, 'The relation should be loaded from cache')
+        for disk in machine_1.disks:
+            disk.delete()
+        machine_1.delete()
+        for disk in machine_2.disks:
+            disk.delete()
+        machine_2.delete()

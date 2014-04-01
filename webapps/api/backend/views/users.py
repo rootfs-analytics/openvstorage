@@ -16,7 +16,7 @@
 Module for users
 """
 from backend.serializers.user import PasswordSerializer
-from backend.serializers.serializers import FullSerializer, SimpleSerializer
+from backend.serializers.serializers import FullSerializer
 from backend.decorators import required_roles, expose
 from backend.toolbox import Toolbox
 from rest_framework import status, viewsets
@@ -53,13 +53,8 @@ class UserViewSet(viewsets.ViewSet):
         Lists all available Users
         """
         _ = format
-        full = request.QUERY_PARAMS.get('full')
-        if full is not None:
-            users = UserList.get_users()
-            serializer = FullSerializer
-        else:
-            users = UserList.get_users().reduced
-            serializer = SimpleSerializer
+        users = UserList.get_users()
+        users, serializer, contents = Toolbox.handle_list(users, request)
         serialized = serializer(User, instance=users, many=True)
         return Response(serialized.data)
 
@@ -75,7 +70,8 @@ class UserViewSet(viewsets.ViewSet):
         user = UserViewSet._get_object(pk)
         loggedin_user = UserList.get_user_by_username(request.user.username)
         if user.username == loggedin_user.username or Toolbox.is_user_in_roles(loggedin_user, ['system']):
-            serializer = FullSerializer(User, instance=user)
+            contents = Toolbox.handle_retrieve(request)
+            serializer = FullSerializer(User, contents=contents, instance=user)
             return Response(serializer.data)
         return Response(status=status.HTTP_400_BAD_REQUEST)
 
