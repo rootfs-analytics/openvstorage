@@ -29,7 +29,7 @@ class PMachine(DataObject):
                   'username':    (None, str, 'Username of the pMachine.'),
                   'password':    (None, str, 'Password of the pMachine.'),
                   'ip':          (None, str, 'IP address of the pMachine.'),
-                  'hvtype':      (None, ['HYPERV', 'VMWARE', 'XEN'], 'Hypervisor type running on the pMachine.')}
+                  'hvtype':      (None, ['HYPERV', 'VMWARE', 'XEN', 'KVM'], 'Hypervisor type running on the pMachine.')}
     _relations = {}
     _expiry = {}
     # pylint: enable=line-too-long

@@ -43,7 +43,7 @@ class VMachine(DataObject):
     _relations = {'pmachine': (PMachine, 'vmachines'),
                   'vpool':    (VPool, 'vmachines')}
     _expiry = {'snapshots':          (60, list),
-               'hypervisor_status': (300, str, True),  # The cache is invalidated on start/stop
+               'hypervisor_status': (300, str),
                'statistics':          (5, dict),
                'stored_data':        (60, int),
                'failover_mode':      (60, str),
@@ -168,13 +168,9 @@ class VMachine(DataObject):
         Gets the vPool guids linked to this vMachine
         """
         vpool_guids = set()
-        vdisks = self.vdisks
         if self.is_internal:
-            vdisks = []
             for vsr in self.served_vsrs:
-                for vdisk in vsr.vpool.vdisks:
-                    if vdisk.vsrid == vsr.vsrid:
-                        vdisks.append(vdisk)
-        for vdisk in vdisks:
+                vpool_guids.add(vsr.vpool_guid)
+        for vdisk in self.vdisks:
             vpool_guids.add(vdisk.vpool_guid)
         return list(vpool_guids)

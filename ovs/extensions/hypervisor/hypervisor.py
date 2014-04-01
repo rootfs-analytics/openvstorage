@@ -63,14 +63,14 @@ class Hypervisor(object):
         pass
 
     @abc.abstractmethod
-    def create_vm_from_template(self, name, source_vm, disks, ip, mountpoint, esxhost=None, wait=True):
+    def create_vm_from_template(self, name, source_vm, disks, ip, mountpoint, wait=True):
         """
         Abstract method
         """
         pass
 
     @abc.abstractmethod
-    def clone_vm(self, vmid, name, disks, esxhost=None, wait=False):
+    def clone_vm(self, vmid, name, disks, wait=False):
         """
         Abstract method
         """
@@ -112,14 +112,14 @@ class Hypervisor(object):
         pass
 
     @abc.abstractmethod
-    def is_datastore_available(self, ip, mountpoint, esxhost=None):
+    def is_datastore_available(self, ip, mountpoint):
         """
         Abstract method
         """
         pass
 
     @abc.abstractmethod
-    def set_as_template(self, vmid, disks, esxhost=None, wait=False):
+    def set_as_template(self, vmid, disks, wait=False):
         """
         Abstract method
         """
@@ -129,5 +129,54 @@ class Hypervisor(object):
     def mount_nfs_datastore(self, name, remote_host, remote_path):
         """
         Mounts a given NFS export as a datastore
+        """
+        pass
+
+    @abc.abstractmethod
+    def clean_backing_disk_filename(self, path):
+        """
+        Cleans a backing disk filename to the corresponding disk filename
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_backing_disk_path(self, machinename, devicename):
+        """
+        Builds the path for the file backing a given device/disk
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_disk_path(self, machinename, devicename):
+        """
+        Builds the path for the file representing a given device/disk
+        """
+        pass
+
+    @abc.abstractmethod
+    def clean_vmachine_filename(self, path):
+        """
+        Cleans a VM filename
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_vmachine_path(self, machinename, vsa_machineid):
+        """
+        Builds the path for the file representing a given vmachine
+        """
+        pass
+
+    @abc.abstractmethod
+    def get_rename_scenario(self, old_name, new_name):
+        """
+        Gets the rename scenario based on the old and new name
+        """
+        pass
+
+    @abc.abstractmethod
+    def should_process(self, devicename):
+        """
+        Checks whether a given device should be processed
         """
         pass

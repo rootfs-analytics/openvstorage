@@ -1,4 +1,4 @@
-﻿// Copyright 2014 CloudFounders NV
+// Copyright 2014 CloudFounders NV
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ define([
         };
         self.vTemplateHeaders = [
             { key: 'name',         value: $.t('ovs:generic.name'),       width: undefined },
-            { key: undefined,      value: $.t('ovs:generic.disks'),      width: 60        },
+            { key: undefined,      value: $.t('ovs:generic.vdisks'),      width: 60        },
             { key: 'children',     value: $.t('ovs:generic.children'),   width: 110       },
             { key: undefined,      value: $.t('ovs:generic.actions'),    width: 80        }
         ];
@@ -55,7 +55,7 @@ define([
                     var options = {
                         sort: 'name',
                         full: true,
-                        contents: ''
+                        contents: 'vdisks'
                     };
                     self.loadVTemplatesHandle = api.post('vmachines/filter', self.query, options)
                         .done(function(data) {
@@ -91,7 +91,7 @@ define([
                         sort: 'name',
                         full: true,
                         page: page,
-                        contents: ''
+                        contents: 'vdisks'
                     };
                     self.refreshVTemplatesHandle[page] = api.post('vmachines/filter', self.query, options)
                         .done(function(data) {

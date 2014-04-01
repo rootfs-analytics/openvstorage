@@ -105,7 +105,7 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
                 d3.select('#' + id).select('.primary-text')
                     .text(value.primary());
             }
-            if (!isNaN(value.secondary())) {
+            if (!isNaN(value.secondary.raw())) {
                 d3.select('#' + id).select('.secondary-text')
                     .text(value.secondary() + ' ' + $.t('ovs:generic.iops'));
             }
@@ -141,7 +141,7 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
                 title = $.t(value);
                 $(element).tooltip({
                     html: true,
-                    placement: 'auto right',
+                    placement: 'auto left',
                     title: title
                 });
             }
@@ -153,20 +153,20 @@ define(['knockout', 'jquery', 'd3', 'ovs/generic'], function(ko, $, d3, generic)
                 title = $.t(value);
                 $(element).tooltip({
                     html: true,
-                    placement: 'auto right',
+                    placement: 'auto left',
                     title: title
                 });
             }
         }
     };
-    ko.bindingHandlers.icon = {
+    ko.bindingHandlers.translate = {
         init: function(element, valueAccessor) {
             var value = valueAccessor();
-            $(element).html($.t(value));
+            $(element).html($.t(value, { defaultValue: '' }));
         },
         update: function(element, valueAccessor) {
             var value = valueAccessor();
-            $(element).html($.t(value));
+            $(element).html($.t(value, { defaultValue: '' }));
         }
     };
     ko.bindingHandlers.shortText = {

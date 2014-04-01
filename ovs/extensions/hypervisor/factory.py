@@ -15,9 +15,7 @@
 """
 Hypervisor factory module
 """
-from hypervisors.vmware import VMware
-from hypervisors.hyperv import HyperV
-from hypervisors.xen import Xen
+
 from ovs.extensions.generic.filemutex import FileMutex
 
 
@@ -33,8 +31,8 @@ class Factory(object):
         """
         Returns the appropriate hypervisor client class for a given VMachine
         """
-        hvtype   = node.hvtype
-        ip       = node.ip
+        hvtype = node.hvtype
+        ip = node.ip
         username = node.username
         password = node.password
         key = '{0}_{1}'.format(ip, username)
@@ -43,14 +41,14 @@ class Factory(object):
             try:
                 mutex.acquire(30)
                 if key not in Factory.hypervisors:
-                    if hvtype == 'HYPERV':
-                        hypervisor = HyperV(ip, username, password)
-                    elif hvtype == 'VMWARE':
+                    if hvtype == 'VMWARE':
+                        from hypervisors.vmware import VMware
                         hypervisor = VMware(ip, username, password)
-                    elif hvtype == 'XEN':
-                        hypervisor = Xen(ip, username, password)
+                    elif hvtype == 'KVM':
+                        from hypervisors.kvm import KVM
+                        hypervisor = KVM(ip, username, password)
                     else:
-                        raise Exception('Invalid hypervisor')
+                        raise NotImplementedError('Hypervisor {0} is not yet supported'.format(hvtype))
                     Factory.hypervisors[key] = hypervisor
             finally:
                 mutex.release()

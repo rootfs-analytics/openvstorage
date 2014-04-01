@@ -17,7 +17,7 @@ limitations under the License.
     <div>
         <h2 class="pull-left" data-i18n="ovs:vpools.title"></h2>
         <button class="btn btn-default pull-right" data-bind="click: addVPool"
-                style="display: none; margin-top: 20px; margin-bottom: 10px;">
+                style="margin-top: 20px; margin-bottom: 10px;">
             <span class="fa" data-i18n="[html]ovs:icons.add"></span>&nbsp;
             <span data-i18n="ovs:vpools.add"></span>
         </button>
@@ -35,7 +35,7 @@ limitations under the License.
                 <td><span data-bind="text: freeSpace"></span></td>
                 <td><span data-bind="text: cacheRatio"></span></td>
                 <td><span data-bind="text: iops"></span></td>
-                <td><span data-bind="text: backendType"></span></td>
+                <td><span data-bind="translate: 'ovs:generic.backendtypes.' + backendType()"></span></td>
                 <td><span data-bind="text: backendConnection"></span></td>
                 <td><span data-bind="text: backendLogin"></span></td>
             </tr>

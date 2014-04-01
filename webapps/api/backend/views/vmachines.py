@@ -26,6 +26,7 @@ from ovs.dal.lists.vmachinelist import VMachineList
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.vpool import VPool
+from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
 from ovs.dal.datalist import DataList
 from ovs.dal.dataobjectlist import DataObjectList
 from ovs.lib.vmachine import VMachineController
@@ -77,6 +78,19 @@ class VMachineViewSet(viewsets.ViewSet):
 
     @action()
     @expose(internal=True, customer=True)
+    @required_roles(['delete'])
+    @validate(VMachine)
+    def destroy(self, request, obj):
+        """
+        Deletes a machine
+        """
+        if not obj.is_vtemplate:
+            raise NotAcceptable('vMachine should be a vTemplate')
+        task = VMachineController.delete.delay(machineguid=obj.guid)
+        return Response(task.id, status=status.HTTP_200_OK)
+
+    @action()
+    @expose(internal=True, customer=True)
     @required_roles(['view', 'create'])
     @validate(VMachine)
     def rollback(self, request, obj):
@@ -116,17 +130,14 @@ class VMachineViewSet(viewsets.ViewSet):
         Returns set of served vpool guids and (indirectly) served vmachine guids
         """
         _ = request
-        vpool_guids = set()
         vmachine_guids = set()
         if obj.is_internal is False:
             raise NotAcceptable('vMachine is not a VSA')
         for vsr in obj.served_vsrs:
-            vpool_guids.add(vsr.vpool_guid)
             for vdisk in vsr.vpool.vdisks:
                 if vdisk.vsrid == vsr.vsrid and vdisk.vmachine_guid is not None:
                     vmachine_guids.add(vdisk.vmachine_guid)
-        return Response({'vpool_guids': list(vpool_guids),
-                         'vmachine_guids': list(vmachine_guids)}, status=status.HTTP_200_OK)
+        return Response(list(vmachine_guids), status=status.HTTP_200_OK)
 
     @link()
     @expose(internal=True)
@@ -249,9 +260,28 @@ class VMachineViewSet(viewsets.ViewSet):
         _ = request
         if not obj.is_vtemplate:
             raise NotAcceptable('vMachine is not a vTemplate')
-        pmachine_guids = set()
-        for vsr in obj.vpool.vsrs:
-            pmachine_guids.add(vsr.serving_vmachine.pmachine_guid)
+        # Collect all vPools used by the given template
+        vpool_guids = []
+        vpools = []
+        if obj.vpool is not None:
+            if obj.vpool_guid not in vpool_guids:
+                vpools.append(obj.vpool)
+                vpool_guids.append(obj.vpool_guid)
+        for vdisk in obj.vdisks:
+            if vdisk.vpool_guid not in vpool_guids:
+                vpools.append(vdisk.vpool)
+                vpool_guids.append(vdisk.vpool_guid)
+        # Find pMachines which have all above vPools available.
+        pmachine_guids = None
+        for vpool in vpools:
+            this_pmachine_guids = set()
+            for vsr in vpool.vsrs:
+                this_pmachine_guids.add(vsr.serving_vmachine.pmachine_guid)
+            if pmachine_guids is None:
+                pmachine_guids = list(this_pmachine_guids)
+            else:
+                pmachine_guids = list(this_pmachine_guids & set(pmachine_guids))
+        # Return them
         guids = [{'guid': guid} for guid in pmachine_guids]
         return Response(guids, status=status.HTTP_200_OK)
 
@@ -270,3 +300,80 @@ class VMachineViewSet(viewsets.ViewSet):
             if len(vsas) > 1:
                 actions.append('MOVE_AWAY')
         return Response(actions, status=status.HTTP_200_OK)
+
+    @link()
+    @expose(internal=True, customer=True)
+    @required_roles(['view'])
+    @validate(VMachine)
+    def get_physical_metadata(self, request, obj):
+        """
+        Returns a list of mountpoints on the given VSA
+        """
+        _ = request
+        if not obj.is_internal:
+            raise NotAcceptable('vMachine is not a VSA')
+
+        task = VMachineController.get_physical_metadata.s().apply_async(routing_key='vsa.{0}'.format(obj.machineid))
+        return Response(task.id, status=status.HTTP_200_OK)
+
+    @action()
+    @expose(internal=True, customer=True)
+    @required_roles(['view', 'create'])
+    @validate(VMachine)
+    def add_vpool(self, request, obj):
+        """
+        Adds a vPool to a given VSA
+        """
+        if not obj.is_internal:
+            raise NotAcceptable('vMachine is not a VSA')
+
+        fields = ['vpool_name', 'backend_type', 'connection_host', 'connection_port', 'connection_timeout',
+                  'connection_username', 'connection_password', 'mountpoint_temp', 'mountpoint_dfs', 'mountpoint_md',
+                  'mountpoint_cache', 'storage_ip', 'vrouter_port']
+        parameters = {'vsa_ip': obj.ip}
+        for field in fields:
+            if field not in request.DATA:
+                raise NotAcceptable('Invalid data passed: {0} is missing'.format(field))
+            parameters[field] = request.DATA[field]
+            if not parameters[field] is int:
+                parameters[field] = str(parameters[field])
+
+        task = VMachineController.add_vpool.s(parameters).apply_async(routing_key='vsa.{0}'.format(obj.machineid))
+        return Response(task.id, status=status.HTTP_200_OK)
+
+    @action()
+    @expose(internal=True, customer=True)
+    @required_roles(['view', 'create'])
+    @validate(VMachine)
+    def vsa_to_vpool(self, request, obj):
+        """
+        Adds a vpool to a VSA, given a VSR
+        """
+
+        if not obj.is_internal:
+            raise NotAcceptable('vMachine is not a VSA')
+        if 'vsr_guid' not in request.DATA:
+            raise NotAcceptable('No VSR guid passed')
+
+        vsr = VolumeStorageRouter(request.DATA['vsr_guid'])
+        vpool = vsr.vpool
+        parameters = {'vsa_ip':              obj.ip,
+                      'vpool_name':          vpool.name,
+                      'backend_type':        vpool.backend_type,
+                      'connection_host':     vpool.backend_connection.split(':')[0],
+                      'connection_port':     int(vpool.backend_connection.split(':')[1]),
+                      'connection_timeout':  0,  # Not in use anyway
+                      'connection_username': vpool.backend_login,
+                      'connection_password': vpool.backend_password,
+                      'mountpoint_temp':     vsr.mountpoint_temp,
+                      'mountpoint_dfs':      vsr.mountpoint_dfs,
+                      'mountpoint_md':       vsr.mountpoint_md,
+                      'mountpoint_cache':    vsr.mountpoint_cache,
+                      'storage_ip':          vsr.storage_ip,
+                      'vrouter_port':        vsr.port}
+        for field in parameters:
+            if not parameters[field] is int:
+                parameters[field] = str(parameters[field])
+
+        task = VMachineController.add_vpool.s(parameters).apply_async(routing_key='vsa.{0}'.format(obj.machineid))
+        return Response(task.id, status=status.HTTP_200_OK)
