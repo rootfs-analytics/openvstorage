@@ -22,10 +22,11 @@ define([
         var self = this;
 
         // Variables
-        self.shared        = shared;
-        self.vSAGuids      = [];
-        self.vPoolGuids    = [];
-        self.vMachineGuids = [];
+        self.shared         = shared;
+        self.vSAGuids       = [];
+        self.vPoolGuids     = [];
+        self.vMachineGuids  = [];
+        self.servedVSRGuids = [];
 
         // Handles
         self.loadVDisksHandle  = undefined;
@@ -47,6 +48,7 @@ define([
         self.loaded                = ko.observable(false);
         self.pMachineGuid          = ko.observable();
         self.name                  = ko.observable();
+        self.machineid             = ko.observable();
         self.hypervisorStatus      = ko.observable();
         self.ipAddress             = ko.observable();
         self.isInternal            = ko.observable();
@@ -96,8 +98,7 @@ define([
                 if (generic.xhrCompleted(self.loadSChildrenGuid)) {
                     self.loadSChildrenGuid = api.get('vmachines/' + self.guid() + '/get_served_children')
                         .done(function(data) {
-                            self.vPoolGuids = data.vpool_guids;
-                            self.vMachineGuids = data.vmachine_guids;
+                            self.vMachineGuids = data;
                             deferred.resolve();
                         })
                         .fail(deferred.reject);
@@ -163,6 +164,7 @@ define([
             generic.trySet(self.storedData, data, 'stored_data');
             generic.trySet(self.ipAddress, data, 'ip');
             generic.trySet(self.isInternal, data, 'is_internal');
+            generic.trySet(self.machineid, data, 'machineid');
             generic.trySet(self.isVTemplate, data, 'is_vtemplate');
             generic.trySet(self.snapshots, data, 'snapshots');
             generic.trySet(self.status, data, 'status', generic.lower);
@@ -173,6 +175,9 @@ define([
             }
             if (data.hasOwnProperty('vpools_guids')) {
                 self.vPoolGuids = data.vpools_guids;
+            }
+            if (data.hasOwnProperty('served_vsrs_guids')) {
+                self.servedVSRGuids = data.served_vsrs_guids;
             }
             // The vdisks from a full object data is only valid for non-VSA vMachines, since those
             // don't have disks, but only serve disks.

@@ -13,16 +13,21 @@
 // limitations under the License.
 /*global define, window */
 define([
-    'durandal/activator', 'plugins/dialog', 'knockout'
-], function(activator, dialog, ko) {
+    'durandal/activator', 'plugins/dialog', 'knockout', 'jquery'
+], function(activator, dialog, ko, $) {
     "use strict";
     return function(parent) {
         // Observables
-        parent.title   = ko.observable();
-        parent.step    = ko.observable(0);
-        parent.modal   = ko.observable(false);
-        parent.running = ko.observable(false);
-        parent.steps   = ko.observableArray([]);
+        parent.title       = ko.observable();
+        parent.step        = ko.observable(0);
+        parent.modal       = ko.observable(false);
+        parent.running     = ko.observable(false);
+        parent.steps       = ko.observableArray([]);
+        parent.loadingNext = ko.observable(false);
+
+        // Deferreds
+        parent.closing   = $.Deferred();
+        parent.finishing = $.Deferred();
 
         // Builded variable
         parent.activeStep = activator.create();
@@ -42,7 +47,7 @@ define([
                 return false;
             }
             if (parent.step() < parent.stepsLength() - 1 && parent.stepsLength() > 1) {
-                return parent.canContinue().value;
+                return parent.canContinue().value === true;
             }
             return false;
         });
@@ -51,7 +56,7 @@ define([
                 return false;
             }
             if (parent.step() === parent.stepsLength() - 1) {
-                return parent.canContinue().value;
+                return parent.canContinue().value === true;
             }
             return false;
         });
@@ -60,14 +65,36 @@ define([
             if (step !== undefined) {
                 return step.canContinue();
             }
-            return {value: true, reason: undefined};
+            return { value: true, reasons: [], fields: [] };
         });
 
         // Functions
         parent.next = function() {
             if (parent.step() < parent.stepsLength() ) {
-                parent.step(parent.step() + 1);
-                parent.activateStep();
+                var step = parent.steps()[parent.step()], result;
+                $.Deferred(function(deferred) {
+                    if (step.hasOwnProperty('next') && step.next && step.next.call) {
+                        result = step.next();
+                        if (result.then) {
+                            parent.loadingNext(true);
+                            result
+                                .done(deferred.resolve)
+                                .fail(deferred.reject)
+                                .always(function() {
+                                    parent.loadingNext(false);
+                                });
+                        } else {
+                            deferred.resolve();
+                        }
+                    } else {
+                        deferred.resolve();
+                    }
+                })
+                    .promise()
+                    .then(function() {
+                        parent.step(parent.step() + 1);
+                        parent.activateStep();
+                    });
             }
         };
         parent.activateStep = function() {
@@ -84,6 +111,7 @@ define([
                 success: success,
                 data: success ? {} : undefined
             });
+            parent.closing.resolve(success);
         };
         parent.finish = function() {
             parent.running(true);
@@ -94,12 +122,14 @@ define([
                         success: true,
                         data: data
                     });
+                    parent.finishing.resolve(true);
                 })
                 .fail(function(data) {
                     dialog.close(parent, {
                         success: false,
                         data: data
                     });
+                    parent.finishing.resolve(false);
                 })
                 .always(function() {
                     window.setTimeout(function() { parent.running(false); }, 500);

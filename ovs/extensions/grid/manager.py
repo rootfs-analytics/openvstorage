@@ -29,7 +29,7 @@ import time
 
 from optparse import OptionParser
 from random import choice
-from string import lowercase
+from string import lowercase, digits
 from subprocess import check_output
 
 ARAKOON_CONFIG_TAG = '/opt/OpenvStorage/config/arakoon/{0}/{0}.cfg'
@@ -42,18 +42,48 @@ class Manager(object):
     """
 
     @staticmethod
-    def install_node(ip, password, create_extra_filesystems=False, clean=False):
+    def install_node(ip, create_extra_filesystems=False, clean=False):
         """
         Installs the Open vStorage software on a (remote) node.
         """
 
+        if not os.geteuid() == 0:
+            print 'Please run this script as root'
+            sys.exit(1)
+
         # Load client, local or remote
         is_local = Client.is_local(ip)
+        password = None
+        if is_local is False:
+            print 'Enter the root password for: {0}'.format(ip)
+            password = getpass.getpass()
+
         client = Client.load(ip, password, bypass_local=True)
+        client.run('apt-get update')
+        client.run('apt-get install lsscsi')
 
         if clean:
             Manager._clean(client)
         Manager._create_filesystems(client, create_extra_filesystems)
+
+        possible_hypervisor = None
+        try:
+            module = client.run('lsmod | grep kvm').strip()
+        except:
+            module = ''
+        if module != '':
+            possible_hypervisor = 'KVM'
+        else:
+            try:
+                disktypes = client.run('dmesg | grep VMware').strip()
+            except:
+                disktypes = ''
+            if disktypes != '':
+                possible_hypervisor = 'VMWARE'
+        hypervisor = Helper.ask_choice(['VMWARE', 'KVM'], question='Which hypervisor will be backing this VSA?', default_value=possible_hypervisor)
+
+        ipaddresses = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
+        ipaddresses = [found_ip.strip() for found_ip in ipaddresses if found_ip.strip() != '127.0.0.1']
 
         # Ask a bunch of questions and prepare HRD files for installation
         first_node = False
@@ -61,28 +91,35 @@ class Manager(object):
             # @TODO: Try to figure out whether this is the first node or not.
             first_node = Helper.ask_yesno('Is this a first node installation?', default_value=True)
         configuration = {'openvstorage': {}}
-        configuration['openvstorage']['ovs.host.hypervisor'] = 'VMWARE'
-        configuration['openvstorage']['ovs.host.name'] = Helper.ask_string('Enter hypervisor hostname', default_value='esxi')
-        ip, username, password = None, 'root', None
-        while True:
-            ip = Helper.ask_string('Enter hypervisor ip address', default_value=ip)
-            username = Helper.ask_string('Enter hypervisor username', default_value=username)
-            password = getpass.getpass()
-            try:
-                request = urllib2.Request('https://{0}/mob'.format(ip))
-                auth = base64.encodestring('{0}:{1}'.format(username, password)).replace('\n', '')
-                request.add_header("Authorization", "Basic %s" % auth)
-                urllib2.urlopen(request).read()
-                break
-            except Exception as ex:
-                print 'Could not connect to {0}: {1}'.format(ip, ex)
-        configuration['openvstorage']['ovs.host.ip'] = ip
+        configuration['openvstorage']['ovs.host.hypervisor'] = hypervisor
+        default_name = 'esxi' if hypervisor == 'VMWARE' else 'kvm'
+        configuration['openvstorage']['ovs.host.name'] = Helper.ask_string('Enter hypervisor hostname', default_value=default_name)
+        hypervisor_ip, username, hypervisor_password = None, 'root', None
+        if hypervisor == 'VMWARE':
+            while True:
+                hypervisor_ip = Helper.ask_string('Enter hypervisor ip address', default_value=ip)
+                username = Helper.ask_string('Enter hypervisor username', default_value=username)
+                hypervisor_password = getpass.getpass()
+                try:
+                    request = urllib2.Request('https://{0}/mob'.format(hypervisor_ip))
+                    auth = base64.encodestring('{0}:{1}'.format(username, hypervisor_password)).replace('\n', '')
+                    request.add_header("Authorization", "Basic %s" % auth)
+                    urllib2.urlopen(request).read()
+                    break
+                except Exception as ex:
+                    print 'Could not connect to {0}: {1}'.format(hypervisor_ip, ex)
+        elif hypervisor == 'KVM':
+            # In case of KVM, the VSA is the pMachine, so credentials are shared.
+            hypervisor_ip = Helper.ask_choice(ipaddresses,
+                                              question='Choose hypervisor public ip address',
+                                              default_value=Helper.find_in_list(ipaddresses, ip))
+            username = client.run('whoami').strip()
+            hypervisor_password = password
+        configuration['openvstorage']['ovs.host.ip'] = hypervisor_ip
         configuration['openvstorage']['ovs.host.login'] = username
-        configuration['openvstorage']['ovs.host.password'] = password
+        configuration['openvstorage']['ovs.host.password'] = hypervisor_password
 
         configuration['openvstorage-core'] = {}
-        ipaddresses = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
-        ipaddresses = [ip for ip in ipaddresses if ip != '127.0.0.1']
         configuration['openvstorage-core']['ovs.grid.ip'] = Helper.ask_choice(ipaddresses,
                                                                               question='Choose public ip address',
                                                                               default_value=Helper.find_in_list(ipaddresses, ip))
@@ -151,16 +188,18 @@ class Manager(object):
         client.file_append('/etc/security/limits.conf', '\nroot soft core  unlimited\novs  soft core  unlimited\n')
 
         # Install base framework, JumpScale in this case
-        install_branch = Manager._prepare_jscore(client, is_local)
+        install_branch, ovs_version = Manager._prepare_jscore(client, is_local)
         Manager._install_jscore(client, install_branch)
+
+        client.run('apt-get -y -q install libvirt0 python-libvirt virtinst')
 
         # Install Open vStorage
         print 'Installing Open vStorage...'
         client.run('apt-get -y -q install python-dev')
-        client.run('jpackage_install -n openvstorage')
+        client.run('jpackage_install -n openvstorage -v {0}'.format(ovs_version))
 
     @staticmethod
-    def init_node(ip, password, join_masters=False):
+    def init_node(ip, join_masters=False):
         """
         Initializes a node, making sure all required services are up and running.
         Optionally, the node can also join the masters, also participating in the arakoon and memcache
@@ -181,15 +220,76 @@ class Manager(object):
             print 'Do not use 127.0.0.1 as ip address, use the public grid ip instead.'
             sys.exit(1)
 
+        nodes = Manager._get_cluster_nodes()  # All nodes, including the local and the new one
+
+        # Generate RSA keypairs
+        print 'Setting up key authentication.'
+        print 'Enter root password for: {0}'.format(ip)
+        local_password = getpass.getpass()
+        client = Client.load(ip, local_password)
+        root_ssh_folder = '{0}/.ssh'.format(client.run('echo ~'))
+        ovs_ssh_folder = '{0}/.ssh'.format(client.run('su - ovs -c "echo ~"'))
+        private_key_filename = '{0}/id_rsa'
+        public_key_filename = '{0}/id_rsa.pub'
+        authorized_keys_filename = '{0}/authorized_keys'
+        known_hosts_filename = '{0}/known_hosts'
+        # Generate keys for root
+        client.dir_ensure(root_ssh_folder)
+        client.run("ssh-keygen -t rsa -b 4096 -f {0} -N ''".format(private_key_filename.format(root_ssh_folder)))
+        # Generate keys for ovs
+        client.run('su - ovs -c "mkdir -p {0}"'.format(ovs_ssh_folder))
+        client.run('su - ovs -c "ssh-keygen -t rsa -b 4096 -f {0} -N \'\'"'.format(private_key_filename.format(ovs_ssh_folder)))
+        root_public_key = client.file_read(public_key_filename.format(root_ssh_folder)).strip()
+        ovs_public_key = client.file_read(public_key_filename.format(ovs_ssh_folder)).strip()
+        root_authorized_keys = ''
+        ovs_authorized_keys = ''
+        for node in nodes:
+            if node != ip:
+                print 'Enter the root password for: {0}'.format(node)
+                node_password = getpass.getpass()
+            else:
+                node_password = local_password
+            node_client = Client.load(node, node_password)
+            for user, folder in [('root', root_ssh_folder), ('ovs', ovs_ssh_folder)]:
+                node_client.run('su - {0} -c "touch {1}"'.format(user, known_hosts_filename.format(folder)))
+                node_client.run('su - {0} -c "chmod 600 {1}; chown {0}:{0} {1}"'.format(user, known_hosts_filename.format(folder)))
+                node_client.run('su - {0} -c "echo \'\' > {1}"'.format(user, known_hosts_filename.format(folder)))
+                for subnode in nodes:
+                    node_client.run('su - {0} -c "ssh-keyscan -H {1} >> {2}"'.format(user, subnode, known_hosts_filename.format(folder)))
+            root_authorized_keys += node_client.file_read(public_key_filename.format(root_ssh_folder))
+            ovs_authorized_keys += node_client.file_read(public_key_filename.format(ovs_ssh_folder))
+            # Root keys
+            if node_client.file_exists(authorized_keys_filename.format(root_ssh_folder)):
+                node_authorized_keys = node_client.file_read(authorized_keys_filename.format(root_ssh_folder))
+            else:
+                node_authorized_keys = ''
+            changed = False
+            if root_public_key not in node_authorized_keys:
+                node_authorized_keys += root_public_key + '\n'
+                changed = True
+            if ovs_public_key not in node_authorized_keys:
+                node_authorized_keys += ovs_public_key + '\n'
+                changed = True
+            if changed:
+                for user, folder in [('root', root_ssh_folder), ('ovs', ovs_ssh_folder)]:
+                    client.run('su - {0} -c "touch {1}"'.format(user, authorized_keys_filename.format(folder)))
+                    node_client.run('su - {0} -c "chmod 600 {1}; chown {0}:{0} {1}"'.format(user, authorized_keys_filename.format(folder)))
+                    node_client.file_write(authorized_keys_filename.format(folder), node_authorized_keys)
+        client = Client.load(ip, local_password)
+        client.file_write(authorized_keys_filename.format(root_ssh_folder), root_authorized_keys + ovs_authorized_keys)
+        client.file_write(authorized_keys_filename.format(ovs_ssh_folder), root_authorized_keys + ovs_authorized_keys)
+
+        print 'Starting initialization...'
         # Make sure to ALWAYS reload the client when switching targets, as Fabric seems to be singleton-ish
         is_local = Client.is_local(ip)
-        client = Client.load(ip, password)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
+        client = Client.load(ip)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
         unique_id = sorted(client.run("ip a | grep link/ether | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | sed 's/://g'").strip().split('\n'))[0].strip()
 
         arakoon_management = ArakoonManagement()
-        nodes = Manager._get_cluster_nodes()  # All nodes, including the local and the new one
         arakoon_nodes = arakoon_management.getCluster('ovsdb').listNodes()
-        client = Client.load(ip, password)
+        if unique_id in arakoon_nodes:
+            arakoon_nodes.remove(unique_id)
+        client = Client.load(ip)
         new_node_hostname = client.run('hostname')
         if is_local and Configuration.get('grid.node.id') != '1':
             # If the script is executed local and there are multiple nodes, the script is executed on node 2+.
@@ -202,26 +302,29 @@ class Manager(object):
             join_masters = True
         clusters = arakoon_management.listClusters()
 
-        all_services = ['arakoon_ovsdb', 'arakoon_voldrv', 'memcached', 'rabbitmq', 'ovs_consumer_volumerouter',
-                        'ovs_flower', 'ovs_scheduled_tasks', 'webapp_api', 'nginx', 'ovs_workers']
+        model_services = ['arakoon_ovsdb', 'memcached', 'arakoon_voldrv']
+        master_services = ['rabbitmq', 'ovs_flower', 'ovs_scheduled_tasks']
+        extra_services = ['webapp_api', 'nginx', 'ovs_workers', 'ovs_consumer_volumerouter']
+        all_services = model_services + master_services + extra_services
         arakoon_clientconfigfiles = [ARAKOON_CLIENTCONFIG_TAG.format(cluster) for cluster in clusters]
         generic_configfiles = {'/opt/OpenvStorage/config/memcacheclient.cfg': 11211,
                                '/opt/OpenvStorage/config/rabbitmqclient.cfg': 5672}
 
+        is_master = False
         if join_masters:
             print 'Joining master nodes, services going down.'
 
             # Stop services (on all nodes)
             for node in nodes:
-                node_client = Client.load(node, password)
+                node_client = Client.load(node)
                 for service in all_services:
                     node_client.run('jsprocess disable -n {0}'.format(service))
                     node_client.run('jsprocess stop -n {0}'.format(service))
 
             # Fetch some information
-            client = Client.load(ip, password)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
+            client = Client.load(ip)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
             remote_ips = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
-            remote_ip = [ipa.strip() for ipa in nodes if ipa in remote_ips][0]
+            remote_ip = [ipa.strip() for ipa in remote_ips if ipa.strip() in nodes][0]
 
             # Configure arakoon
             for cluster in clusters:
@@ -231,7 +334,7 @@ class Manager(object):
                 global_section = cfg.get('global')
                 cluster_nodes = global_section['cluster'] if type(global_section['cluster']) == list else [global_section['cluster']]
                 if unique_id not in cluster_nodes:
-                    client = Client.load(ip, password)
+                    client = Client.load(ip)
                     remote_config = client.file_read(ARAKOON_CONFIG_TAG.format(cluster))
                     with open('/tmp/arakoon_{0}_cfg'.format(unique_id), 'w') as the_file:
                         the_file.write(remote_config)
@@ -242,10 +345,10 @@ class Manager(object):
                     cfg.update({unique_id: remote_cfg.get(unique_id)})
                     cfg.write()
                     for node in nodes:
-                        node_client = Client.load(node, password)
+                        node_client = Client.load(node)
                         node_client.file_upload(ARAKOON_CONFIG_TAG.format(cluster),
                                                 ARAKOON_CONFIG_TAG.format(cluster))
-                client = Client.load(ip, password)
+                client = Client.load(ip)
                 arakoon_create_directories = """
 from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagement
 arakoon_management = ArakoonManagement()
@@ -256,7 +359,7 @@ arakoon_cluster.createDirs(arakoon_cluster.listLocalNodes()[0])
 
             # Update all nodes hosts file with new node and new node hosts file with all others
             for node in nodes:
-                client_node = Client.load(node, password)
+                client_node = Client.load(node)
                 update_hosts_file = """
 from ovs.plugin.provider.net import Net
 Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
@@ -268,19 +371,19 @@ Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
                     client_node.run('jsprocess start -n rabbitmq')
                 else:
                     for subnode in nodes:
-                        client_node = Client.load(subnode, password)
+                        client_node = Client.load(subnode)
                         node_hostname = client_node.run('hostname')
                         update_hosts_file = """
 from ovs.plugin.provider.net import Net
 Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
 """ % {'ip': subnode,
      'host': node_hostname}
-                        client = Client.load(ip, password)
+                        client = Client.load(ip)
                         Manager._exec_python(client, update_hosts_file)
 
             # Update arakoon cluster configuration in voldrv configuration files
             for node in nodes:
-                client_node = Client.load(node, password)
+                client_node = Client.load(node)
                 update_voldrv = """
 import os
 from ovs.plugin.provider.configuration import Configuration
@@ -301,7 +404,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                 Manager._exec_python(client_node, update_voldrv)
 
             # Join rabbitMQ clusters
-            client = Client.load(ip, password)
+            client = Client.load(ip)
             client.run('rabbitmq-server -detached; sleep 5; rabbitmqctl stop_app; sleep 5; rabbitmqctl reset; sleep 5; rabbitmqctl stop; sleep 5;')
             if not is_local:
                 # Copy rabbitmq cookie
@@ -311,9 +414,9 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                 client.file_attribs(rabbitmq_cookie_file, mode=400)
                 client.run('rabbitmq-server -detached; sleep 5; rabbitmqctl stop_app; sleep 5;')
                 # If not local, a cluster needs to be joined.
-                master_client = Client.load(Configuration.get('grid.master.ip'), password)
+                master_client = Client.load(Configuration.get('grid.master.ip'))
                 master_hostname = master_client.run('hostname')
-                client = Client.load(ip, password)
+                client = Client.load(ip)
                 client.run('rabbitmqctl join_cluster rabbit@{}; sleep 5;'.format(master_hostname))
                 client.run('rabbitmqctl stop; sleep 5;')
 
@@ -347,19 +450,27 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
 
             # Upload local client configurations to all nodes
             for node in nodes:
-                node_client = Client.load(node, password)
+                node_client = Client.load(node)
                 for config in arakoon_clientconfigfiles + generic_configfiles.keys():
                     node_client.file_upload(config, config)
 
-            client = Client.load(ip, password)
+            # Update possible volumedrivers with new amqp configuration.
+            # On each node, it will loop trough all already configured vpools and update their amqp connection
+            # info with those of the new rabbitmq client configuration file.
+            for node in nodes:
+                node_client = Client.load(node)
+                Manager._configure_amqp_to_volumedriver(node_client)
+
+            client = Client.load(ip)
             Manager._configure_nginx(client)
 
             # Restart services
             for node in nodes:
-                node_client = Client.load(node, password)
-                for service in all_services:
+                node_client = Client.load(node)
+                for service in model_services:
                     node_client.run('jsprocess enable -n {0}'.format(service))
                     node_client.run('jsprocess start -n {0}'.format(service))
+            is_master = True
 
             # If this is first node we need to load default model values.
             # @TODO: Think about better detection algorithm.
@@ -368,16 +479,10 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                 Migration.migrate()
 
         else:
-            client = Client.load(ip, password)
-            # Disable master services
-            client.run('jsprocess disable -n arakoon_ovsdb')
-            client.run('jsprocess disable -n arakoon_voldrv')
-            client.run('jsprocess disable -n memcached')
-            client.run('jsprocess disable -n rabbitmq')
-            client.run('jsprocess disable -n ovs_consumer_volumerouter')
-            client.run('jsprocess disable -n ovs_flower')
-            client.run('jsprocess disable -n ovs_scheduled_tasks')
-
+            client = Client.load(ip)
+            # Disable master and model services
+            for service in master_services + model_services:
+                client.run('jsprocess disable -n {0}'.format(service))
             # Stop services
             for service in all_services:
                 client.run('jsprocess stop -n {0}'.format(service))
@@ -386,11 +491,6 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             for config in arakoon_clientconfigfiles + generic_configfiles.keys():
                 client.file_upload(config, config)
             Manager._configure_nginx(client)
-
-            # Start other services
-            client.run('jsprocess start -n webapp_api')
-            client.run('jsprocess start -n nginx')
-            client.run('jsprocess start -n ovs_workers')
 
         for cluster in ['ovsdb', 'voldrv']:
             master_elected = False
@@ -403,11 +503,8 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                     print "Arakoon master not yet determined for {0}".format(cluster)
                     time.sleep(1)
 
-        # Make sure the process manager is started
-        client = Client.load(ip, password)
-        client.run('service processmanager start')
-
         # Add VSA and pMachine in the model, if they don't yet exist
+        client = Client.load(ip)
         pmachine = None
         pmachine_ip = Manager._read_remote_config(client, 'ovs.host.ip')
         pmachine_hvtype = Manager._read_remote_config(client, 'ovs.host.hypervisor')
@@ -434,17 +531,37 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             vsa.is_vtemplate = False
             vsa.is_internal = True
             vsa.machineid = unique_id
-            vsa.ip = ip
+            vsa.ip = Manager._read_remote_config(client, 'ovs.grid.ip')
             vsa.save()
         vsa.pmachine = pmachine
         vsa.save()
 
+        if is_master is True:
+            for node in nodes:
+                node_client = Client.load(node)
+                for service in master_services + extra_services:
+                    node_client.run('jsprocess enable -n {0}'.format(service))
+                    node_client.run('jsprocess start -n {0}'.format(service))
+        else:
+            for node in nodes:
+                node_client = Client.load(node)
+                for service in extra_services:
+                    node_client.run('jsprocess enable -n {0}'.format(service))
+                    node_client.run('jsprocess start -n {0}'.format(service))
+
+        # Make sure the process manager is started
+        client = Client.load(ip)
+        try:
+            client.run('service processmanager start')
+        except:
+            pass
+
         for node in nodes:
-            node_client = Client.load(node, password)
+            node_client = Client.load(node)
             node_client.run('jsprocess restart -n ovs_workers')
 
     @staticmethod
-    def init_vpool(ip, password, vpool_name):
+    def init_vpool(ip, vpool_name, parameters=None):
         """
         Initializes a vpool on a given node
         """
@@ -456,7 +573,8 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
         from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
         from volumedriver.storagerouter.storagerouterclient import ClusterRegistry, ArakoonNodeConfig, ClusterNodeConfig
         from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagement
-        from ovs.plugin.provider.configuration import Configuration
+
+        parameters = {} if parameters is None else parameters
 
         while not re.match('^[0-9a-zA-Z]+([\-_]+[0-9a-zA-Z]+)*$', vpool_name):
             print 'Invalid vPool name given. Only 0-9, a-z, A-Z, _ and - are allowed.'
@@ -467,7 +585,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             )
             vpool_name = Helper.ask_string('Provide new vPool name', default_value=suggestion)
 
-        client = Client.load(ip, password)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
+        client = Client.load(ip)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
         unique_id = sorted(client.run("ip a | grep link/ether | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | sed 's/://g'").strip().split('\n'))[0].strip()
 
         vsa = None
@@ -508,14 +626,14 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
 
         # Stop services
         for node in nodes:
-            node_client = Client.load(node, password)
+            node_client = Client.load(node)
             for service in services:
                 node_client.run('jsprocess disable -n {0}'.format(service))
                 node_client.run('jsprocess stop -n {0}'.format(service))
 
         # Keep in mind that if the VSR exists, the vPool does as well
 
-        client = Client.load(ip, password)
+        client = Client.load(ip)
         mountpoints = client.run('mount -v').strip().split('\n')
         mountpoints = [p.split(' ')[2] for p in mountpoints if
                        len(p.split(' ')) > 2 and ('/mnt/' in p.split(' ')[2] or '/var' in p.split(' ')[2])]
@@ -525,15 +643,15 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             supported_backends = Manager._read_remote_config(client, 'volumedriver.supported.backends').split(',')
             if 'REST' in supported_backends:
                 supported_backends.remove('REST')  # REST is not supported for now
-            vpool.backend_type = Helper.ask_choice(supported_backends, 'Select type of storage backend', default_value='CEPH_S3')
+            vpool.backend_type = parameters.get('backend_type') or Helper.ask_choice(supported_backends, 'Select type of storage backend', default_value='CEPH_S3')
             connection_host = connection_port = connection_username = connection_password = None
             if vpool.backend_type == 'LOCAL':
                 vpool.backend_metadata = {'backend_type': 'LOCAL'}
             if vpool.backend_type == 'REST':
-                connection_host = Helper.ask_string('Provide REST ip address')
-                connection_port = Helper.ask_integer('Provide REST connection port', min_value=1, max_value=65535)
-                rest_connection_timeout_secs = Helper.ask_integer('Provide desired REST connection timeout(secs)',
-                                                                  min_value=0, max_value=99999)
+                connection_host = parameters.get('connection_host') or Helper.ask_string('Provide REST ip address')
+                connection_port = parameters.get('connection_port') or Helper.ask_integer('Provide REST connection port', min_value=1, max_value=65535)
+                rest_connection_timeout_secs = parameters.get('connection_timeout') or Helper.ask_integer('Provide desired REST connection timeout(secs)',
+                                                                                                          min_value=0, max_value=99999)
                 vpool.backend_metadata = {'rest_connection_host': connection_host,
                                           'rest_connection_port': connection_port,
                                           'buchla_connection_log_level': "0",
@@ -541,11 +659,11 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                                           'rest_connection_metadata_format': "JSON",
                                           'backend_type': 'REST'}
             elif vpool.backend_type in ('CEPH_S3', 'AMAZON_S3', 'SWIFT_S3'):
-                connection_host = Helper.ask_string('Specify fqdn or ip address for your S3 compatible host')
-                connection_port = Helper.ask_integer('Specify port for your S3 compatible host', min_value=1,
-                                                     max_value=65535)
-                connection_username = Helper.ask_string('Specify S3 access key')
-                connection_password = getpass.getpass()
+                connection_host = parameters.get('connection_host') or Helper.ask_string('Specify fqdn or ip address for your S3 compatible host')
+                connection_port = parameters.get('connection_port') or Helper.ask_integer('Specify port for your S3 compatible host: ', min_value=1,
+                                                                                          max_value=65535)
+                connection_username = parameters.get('connection_username') or Helper.ask_string('Specify S3 access key')
+                connection_password = parameters.get('connection_password') or getpass.getpass()
                 vpool.backend_metadata = {'s3_connection_host': connection_host,
                                           's3_connection_port': connection_port,
                                           's3_connection_username': connection_username,
@@ -569,27 +687,40 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             vsr = VolumeStorageRouter()
             new_vsr = True
 
-        mountpoint_temp = Helper.ask_choice(mountpoints,
-                                            question='Select temporary FS mountpoint',
-                                            default_value=Helper.find_in_list(mountpoints, 'tmp'))
-        mountpoints.remove(mountpoint_temp)
+        mountpoint_temp = parameters.get('mountpoint_temp') or Helper.ask_choice(mountpoints,
+                                                                                 question='Select temporary FS mountpoint',
+                                                                                 default_value=Helper.find_in_list(mountpoints, 'tmp'))
+        if mountpoint_temp in mountpoints:
+            mountpoints.remove(mountpoint_temp)
         mountpoint_dfs_default = Helper.find_in_list(mountpoints, 'local')
         if vpool.backend_type in ('CEPH_S3', 'AMAZON_S3', 'SWIFT_S3'):
-            mountpoint_dfs = Helper.ask_string(message='Enter a mountpoint for the S3 backend',
-                                               default_value='/mnt/dfs/{}'.format(vpool.name))
+            mountpoint_dfs = parameters.get('mountpoint_dfs') or Helper.ask_string(message='Enter a mountpoint for the S3 backend',
+                                                                                   default_value='/mnt/dfs/{}'.format(vpool.name))
         else:
-            mountpoint_dfs = Helper.ask_choice(mountpoints,
-                                               question='Select distributed FS mountpoint',
-                                               default_value=Helper.find_in_list(mountpoints, 'dfs'))
-            mountpoints.remove(mountpoint_dfs)
-        mountpoint_md = Helper.ask_choice(mountpoints,
-                                          question='Select metadata mountpoint',
-                                          default_value=Helper.find_in_list(mountpoints, 'md'))
-        mountpoints.remove(mountpoint_md)
-        mountpoint_cache = Helper.ask_choice(mountpoints,
-                                             question='Select cache mountpoint',
-                                             default_value=Helper.find_in_list(mountpoints, 'cache'))
-        mountpoints.remove(mountpoint_cache)
+            mountpoint_dfs = parameters.get('mountpoint_dfs') or Helper.ask_choice(mountpoints,
+                                                                                   question='Select distributed FS mountpoint',
+                                                                                   default_value=Helper.find_in_list(mountpoints, 'dfs'))
+            if mountpoint_dfs in mountpoints:
+                mountpoints.remove(mountpoint_dfs)
+        mountpoint_md = parameters.get('mountpoint_md') or Helper.ask_choice(mountpoints,
+                                                                             question='Select metadata mountpoint',
+                                                                             default_value=Helper.find_in_list(mountpoints, 'md'))
+        if mountpoint_md in mountpoints:
+            mountpoints.remove(mountpoint_md)
+        mountpoint_cache = parameters.get('mountpoint_cache') or Helper.ask_choice(mountpoints,
+                                                                                   question='Select cache mountpoint',
+                                                                                   default_value=Helper.find_in_list(mountpoints, 'cache'))
+        if mountpoint_cache in mountpoints:
+            mountpoints.remove(mountpoint_cache)
+
+        client = Client.load(ip)
+        dir_create_script = """
+import os
+for directory in {0}:
+    if not os.path.exists(directory):
+        os.makedirs(directory)""".format([mountpoint_temp, mountpoint_dfs, mountpoint_md, mountpoint_cache])
+        Manager._exec_python(client, dir_create_script)
+
         cache_fs = os.statvfs(mountpoint_cache)
         scocache = '{}/sco_{}'.format(mountpoint_cache, vpool_name)
         readcache = '{}/read_{}'.format(mountpoint_cache, vpool_name)
@@ -609,21 +740,23 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             ports_used_in_model = [vsr.port for vsr in VolumeStorageRouterList.get_volumestoragerouters_by_vsa(vsa.guid)]
             vrouter_port_in_hrd = int(Manager._read_remote_config(client, 'volumedriver.filesystem.xmlrpc.port'))
             if vrouter_port_in_hrd in ports_used_in_model:
-                vrouter_port = Helper.ask_integer('Provide Volumedriver connection port (make sure port is not in use)',
-                                                  min_value=1024, max_value=max(ports_used_in_model) + 3)
+                vrouter_port = parameters.get('vrouter_port') or Helper.ask_integer('Provide Volumedriver connection port (make sure port is not in use)',
+                                                                                    min_value=1024, max_value=max(ports_used_in_model) + 3)
             else:
                 vrouter_port = vrouter_port_in_hrd
         else:
             vrouter_port = vsr.port
-        ipaddresses = client.run(
-            "ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
-        ipaddresses = [ipaddr.strip() for ipaddr in ipaddresses if ipaddr.strip() != '127.0.0.1']
+        ipaddresses = client.run("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1").strip().split('\n')
+        ipaddresses = [ipaddr.strip() for ipaddr in ipaddresses]
         grid_ip = Manager._read_remote_config(client, 'ovs.grid.ip')
         if grid_ip in ipaddresses:
             ipaddresses.remove(grid_ip)
         if not ipaddresses:
             raise RuntimeError('No available ip addresses found suitable for volumerouter storage ip')
-        volumedriver_storageip = Helper.ask_choice(ipaddresses, 'Select storage ip address for this vpool')
+        if vsa.pmachine.hvtype == 'KVM':
+            volumedriver_storageip = '127.0.0.1'
+        else:
+            volumedriver_storageip = parameters.get('storage_ip') or Helper.ask_choice(ipaddresses, 'Select storage ip address for this vpool')
         vrouter_id = '{0}{1}'.format(vpool_name, unique_id)
 
         vrouter_config = {'vrouter_id': vrouter_id,
@@ -655,11 +788,6 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
         scocaches = [{'path': scocache, 'size': scocache_size}]
         filesystem_config = {'fs_backend_path': mountpoint_dfs}
         volumemanager_config = {'metadata_path': metadatapath, 'tlog_path': tlogpath}
-        amqp_uri = '{}://{}:{}@{}:{}'.format(Configuration.get('ovs.core.broker.protocol'),
-                                             Configuration.get('ovs.core.broker.login'),
-                                             Configuration.get('ovs.core.broker.password'),
-                                             Configuration.get('ovs.grid.ip'),
-                                             Configuration.get('ovs.core.broker.port'))
         vsr_config_script = """
 from ovs.plugin.provider.configuration import Configuration
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterConfiguration
@@ -672,13 +800,12 @@ vsr_configuration.configure_filesystem({5})
 vsr_configuration.configure_volumemanager({6})
 vsr_configuration.configure_volumerouter('{0}', {7})
 vsr_configuration.configure_arakoon_cluster('{8}', {9})
-queue_config = {{'events_amqp_routing_key': Configuration.get('ovs.core.broker.volumerouter.queue'),
-                 'events_amqp_uri': '{10}'}}
-vsr_configuration.configure_event_publisher(queue_config)
+vsr_configuration.configure_hypervisor('{10}')
 """.format(vpool_name, vpool.backend_metadata, readcaches, scocaches, failovercache, filesystem_config,
            volumemanager_config, vrouter_config, voldrv_arakoon_cluster_id, voldrv_arakoon_client_config,
-           amqp_uri)
+           vsa.pmachine.hvtype)
         Manager._exec_python(client, vsr_config_script)
+        Manager._configure_amqp_to_volumedriver(client, vpool_name)
 
         # Updating the model
         vsr.vsrid = vrouter_id
@@ -689,7 +816,9 @@ vsr_configuration.configure_event_publisher(queue_config)
         vsr.port = vrouter_port
         vsr.mountpoint = '/mnt/{0}'.format(vpool_name)
         vsr.mountpoint_temp = mountpoint_temp
+        vsr.mountpoint_cache = mountpoint_cache
         vsr.mountpoint_dfs = mountpoint_dfs
+        vsr.mountpoint_md = mountpoint_md
         vsr.serving_vmachine = vsa
         vsr.vpool = vpool
         vsr.save()
@@ -707,7 +836,7 @@ for filename in {1}:
 
         config_file = '{0}/voldrv_vpools/{1}.json'.format(Manager._read_remote_config(client, 'ovs.core.cfgdir'), vpool_name)
         log_file = '/var/log/{0}.log'.format(vpool_name)
-        vd_cmd = '/usr/bin/volumedriver_fs -f --config-file={0} --mountpoint {1} --logfile {2} -o big_writes -o uid=0 -o gid=0 -o sync_read'.format(config_file, vsr.mountpoint, log_file)
+        vd_cmd = '/usr/bin/volumedriver_fs -f --config-file={0} --mountpoint {1} --logfile {2} -o big_writes -o sync_read -o allow_other -o default_permissions'.format(config_file, vsr.mountpoint, log_file)
         vd_stopcmd = 'exportfs -u *:{0}; umount {0}'.format(vsr.mountpoint)
         vd_name = 'volumedriver_{}'.format(vpool_name)
 
@@ -753,9 +882,9 @@ fstab.add_config('{1}', '{0}', '{2}', '{3}', '{4}', '{5}')
                     if vpool_vsr.guid != vsr.guid:
                         client.dir_ensure('/etc/ceph', True)
                         for cfg_file in ['/etc/ceph/ceph.conf', '/etc/ceph/ceph.keyring']:
-                            remote_client = Client.load(vpool_vsr.serving_vmachine.ip, password)
+                            remote_client = Client.load(vpool_vsr.serving_vmachine.ip)
                             cfg_content = remote_client.file_read(cfg_file)
-                            client = Client.load(ip, password)
+                            client = Client.load(ip)
                             client.file_write(cfg_file, cfg_content)
                         client.file_attribs('/etc/ceph/ceph.keyring', mode=644)
                         break
@@ -781,11 +910,18 @@ fstab.add_config('{1}', '{0}', '{2}', '{3}', '{4}', '{5}')
             client.run('mkdir -p {0}'.format(vsr.mountpoint_dfs))
             client.run('mount {0}'.format(vsr.mountpoint_dfs), pty=False)
 
-        Manager.init_exportfs(client, vpool.name)
+        if vsa.pmachine.hvtype == 'VMWARE':
+            Manager.init_exportfs(client, vpool.name)
+
+        if vsa.pmachine.hvtype == 'KVM':
+            client.run('virsh pool-define-as {0} dir - - - - {1}'.format(vpool_name, vsr.mountpoint))
+            client.run('virsh pool-build {0}'.format(vpool_name))
+            client.run('virsh pool-start {0}'.format(vpool_name))
+            client.run('virsh pool-autostart {0}'.format(vpool_name))
 
         # Start services
         for node in nodes:
-            node_client = Client.load(node, password)
+            node_client = Client.load(node)
             for service in services:
                 node_client.run('jsprocess enable -n {0}'.format(service))
                 node_client.run('jsprocess start -n {0}'.format(service))
@@ -800,6 +936,35 @@ fstab.add_config('{1}', '{0}', '{2}', '{3}', '{4}', '{5}')
             return False
         client.file_attribs(os.path.join(ceph_config_dir, 'ceph.keyring'), mode=644)
         return True
+
+    @staticmethod
+    def _configure_amqp_to_volumedriver(client, vpname=None):
+        """
+        Reads out the RabbitMQ client config, using that to (re)configure the volumedriver configuration(s)
+        """
+        remote_script = """
+import os
+from configobj import ConfigObj
+from ovs.plugin.provider.configuration import Configuration
+protocol = Configuration.get('ovs.core.broker.protocol')
+login = Configuration.get('ovs.core.broker.login')
+password = Configuration.get('ovs.core.broker.password')
+vpool_name = {0}
+uris = []
+cfg = ConfigObj('/opt/OpenvStorage/config/rabbitmqclient.cfg')
+main_section = cfg.get('main')
+nodes = main_section['nodes'] if type(main_section['nodes']) == list else [main_section['nodes']]
+for node in nodes:
+    uris.append({{'amqp_uri': '{{0}}://{{1}}:{{2}}@{{3}}'.format(protocol, login, password, cfg.get(node)['location'])}})
+from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterConfiguration
+queue_config = {{'events_amqp_routing_key': Configuration.get('ovs.core.broker.volumerouter.queue'),
+                 'events_amqp_uris': uris}}
+for config_file in os.listdir('/opt/OpenvStorage/config/voldrv_vpools'):
+    this_vpool_name = config_file.replace('.json', '')
+    if config_file.endswith('.json') and (vpool_name is None or vpool_name == this_vpool_name):
+        vsr_configuration = VolumeStorageRouterConfiguration(this_vpool_name)
+        vsr_configuration.configure_event_publisher(queue_config)"""
+        Manager._exec_python(client, remote_script.format(vpname if vpname is None else "'{0}'".format(vpname)))
 
     @staticmethod
     def init_exportfs(client, vpool_name):
@@ -841,7 +1006,6 @@ print Configuration.get('{0}')
         """
         Get nodes from Osis
         """
-        from ovs.plugin.provider.net import Net
         from ovs.plugin.provider.osis import Osis
         from ovs.plugin.provider.configuration import Configuration
 
@@ -854,14 +1018,32 @@ print Configuration.get('{0}')
             if node.gid != grid_id:
                 continue
             ip_found = False
-            for ip in node.ipaddr:
-                if Net.getReachableIpAddress(ip, 22) == local_ovs_grid_ip:
-                    grid_nodes.append(ip)
-                    ip_found = True
-                    break
-            if not ip_found:
-                raise RuntimeError('No suitable ip address found for node {0}'.format(node.machineguid))
+            if local_ovs_grid_ip in node.ipaddr:
+                # For the local node, the local grid ip is saved as node ip
+                grid_nodes.append(local_ovs_grid_ip)
+            else:
+                for ip in node.ipaddr:
+                    if Manager._get_local_endpoint_to(ip, 22) == local_ovs_grid_ip:
+                        grid_nodes.append(ip)
+                        ip_found = True
+                        break
+                if not ip_found:
+                    raise RuntimeError('No suitable ip address found for node {0}'.format(node.machineguid))
         return grid_nodes
+
+    @staticmethod
+    def _get_local_endpoint_to(ip, port, timeout=2):
+        """
+        Checks from which local ip this machine can connect to a given ip and port. Returns None if it can't connect
+        """
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(timeout)
+            sock.connect((ip, port))
+        except:
+            return None
+        return sock.getsockname()[0]
 
     @staticmethod
     def _configure_nginx(client):
@@ -887,65 +1069,128 @@ print Configuration.get('{0}')
         """
         Cleans a previous install (dirty)
         """
-        client.run('service nfs-kernel-server stop')
-        client.run('pkill arakoon')
-        client.run('rm -rf /usr/local/lib/python2.7/*-packages/JumpScale*')
-        client.run('rm -rf /usr/local/lib/python2.7/dist-packages/jumpscale.pth')
-        client.run('rm -rf /opt/jumpscale')
-        client.run('rm -rf /opt/OpenvStorage')
-        client.run('rm -rf /mnt/db/arakoon /mnt/db/tlogs /mnt/cache/foc /mnt/cache/sco /mnt/cache/read')
+
+        def try_run(command):
+            """
+            Tries executing a command, ignoring any error
+            """
+            try:
+                client.run(command)
+            except:
+                pass
+
+        try_run('service nfs-kernel-server stop')
+        try_run('pkill arakoon')
+        try_run('rm -rf /usr/local/lib/python2.7/*-packages/JumpScale*')
+        try_run('rm -rf /usr/local/lib/python2.7/dist-packages/jumpscale.pth')
+        try_run('rm -rf /opt/jumpscale')
+        try_run('rm -rf /opt/OpenvStorage')
+        try_run('rm -rf /mnt/db/arakoon /mnt/db/tlogs /mnt/cache/foc /mnt/cache/sco /mnt/cache/read')
 
     @staticmethod
     def _create_filesystems(client, create_extra):
         """
         Creates filesystems on the first two additional disks
         """
-        mounted = client.run("mount | cut -d ' ' -f 1").strip().split('\n')
-
-        # Create partitions on SSD
-        if '/dev/sdb1' in mounted:
-            client.run('umount /dev/sdb1')
-        if '/dev/sdb2' in mounted:
-            client.run('umount /dev/sdb2')
-        if '/dev/sdb3' in mounted:
-            client.run('umount /dev/sdb3')
-        client.run('parted /dev/sdb -s mklabel gpt')
-        client.run('parted /dev/sdb -s mkpart cache 2MB 50%')
-        client.run('parted /dev/sdb -s mkpart db 50% 75%')
-        client.run('parted /dev/sdb -s mkpart mdpath 75% 100%')
-        client.run('mkfs.ext4 -q /dev/sdb1 -L cache')
-        client.run('mkfs.ext4 -q /dev/sdb2 -L db')
-        client.run('mkfs.ext4 -q /dev/sdb3 -L mdpath')
-
-        client.run('mkdir -p /mnt/db')
-        client.run('mkdir -p /mnt/cache')
-        client.run('mkdir -p /mnt/md')
-
+        # Scan block devices
+        drive_lines = client.run("ls -l /dev/* | grep -E '/dev/(sd..?|fio..?)' | sed 's/\s\s*/ /g' | cut -d ' ' -f 10").split('\n')
+        drives = {}
+        for drive in drive_lines:
+            partition = drive.strip()
+            if partition == '':
+                continue
+            drive = partition.translate(None, digits)
+            if '/dev/sd' in drive:
+                if drive not in drives:
+                    identifier = drive.replace('/dev/', '')
+                    if client.run('cat /sys/block/{0}/device/type'.format(identifier)).strip() == '0' \
+                            and client.run('cat /sys/block/{0}/removable'.format(identifier)).strip() == '0':
+                        ssd_output = ''
+                        try:
+                            ssd_output = client.run("/usr/bin/lsscsi | grep 'FUSIONIO' | grep {0}".format(drive)).strip()
+                        except:
+                            pass
+                        try:
+                            ssd_output += str(client.run("hdparm -I {0} 2> /dev/null | grep 'Solid State'".format(drive)).strip())
+                        except:
+                            pass
+                        drives[drive] = {'ssd': ('Solid State' in ssd_output or 'FUSIONIO' in ssd_output),
+                                         'partitions': []}
+                if drive in drives:
+                    drives[drive]['partitions'].append(partition)
+            else:
+                if drive not in drives:
+                    drives[drive] = {'ssd': True, 'partitions': []}
+                drives[drive]['partitions'].append(partition)
+        mounted = [device.strip() for device in client.run("mount | cut -d ' ' -f 1").strip().split('\n')]
+        root_partition = client.run("mount | grep 'on / ' | cut -d ' ' -f 1").strip()
+        # Start preparing partitions
         extra_mountpoints = ''
+        hdds = [drive for drive, info in drives.iteritems() if info['ssd'] is False and root_partition not in info['partitions']]
         if create_extra:
             # Create partitions on HDD
-            if '/dev/sdc1' in mounted:
-                client.run('umount /dev/sdc1')
-            if '/dev/sdc2' in mounted:
-                client.run('umount /dev/sdc2')
-            if '/dev/sdc3' in mounted:
-                client.run('umount /dev/sdc3')
-            client.run('parted /dev/sdc -s mklabel gpt')
-            client.run('parted /dev/sdc -s mkpart backendfs 2MB 80%')
-            client.run('parted /dev/sdc -s mkpart distribfs 80% 90%')
-            client.run('parted /dev/sdc -s mkpart tempfs 90% 100%')
-            client.run('mkfs.ext4 -q /dev/sdc1 -L backendfs')
-            client.run('mkfs.ext4 -q /dev/sdc2 -L distribfs')
-            client.run('mkfs.ext4 -q /dev/sdc3 -L tempfs')
+            if len(hdds) == 0:
+                print 'No HDD was found. At least one HDD is required when creating extra filesystems'
+                sys.exit(1)
+            if len(hdds) > 1:
+                hdd = Helper.ask_choice(hdds, question='Choose the HDD to use for Open vStorage')
+            else:
+                hdd = hdds[0]
+            print 'Using {0} as extra HDD'.format(hdd)
+            hdds.remove(hdd)
+            for partition in drives[hdd]['partitions']:
+                if partition in mounted:
+                    client.run('umount {0}'.format(partition))
+            client.run('parted {0} -s mklabel gpt'.format(hdd))
+            client.run('parted {0} -s mkpart backendfs 2MB 80%'.format(hdd))
+            client.run('parted {0} -s mkpart distribfs 80% 90%'.format(hdd))
+            client.run('parted {0} -s mkpart tempfs 90% 100%'.format(hdd))
+            client.run('mkfs.ext4 -q {0}1 -L backendfs'.format(hdd))
+            client.run('mkfs.ext4 -q {0}2 -L distribfs'.format(hdd))
+            client.run('mkfs.ext4 -q {0}3 -L tempfs'.format(hdd))
 
             extra_mountpoints = """
-LABEL=backendfs /mnt/bfs   ext4    defaults,nobootwait,noatime,discard    0    2
+LABEL=backendfs /mnt/bfs         ext4    defaults,nobootwait,noatime,discard    0    2
 LABEL=distribfs /mnt/dfs/local   ext4    defaults,nobootwait,noatime,discard    0    2
-LABEL=tempfs    /var/tmp   ext4    defaults,nobootwait,noatime,discard    0    2
+LABEL=tempfs    /var/tmp         ext4    defaults,nobootwait,noatime,discard    0    2
 """
 
             client.run('mkdir -p /mnt/bfs')
             client.run('mkdir -p /mnt/dfs/local')
+
+        # Create partitions on SSD
+        ssds = [drive for drive, info in drives.iteritems() if info['ssd'] is True and root_partition not in info['partitions']]
+        if len(ssds) == 0:
+            if len(hdds) > 0:
+                print 'No SSD found, but one or more HDDs are found that can be used instead.'
+                print 'However, using a HDD instead of an SSD will cause severe performance loss.'
+                continue_install = Helper.ask_yesno('Are you sure you want to continue?', default_value=False)
+                if continue_install:
+                    ssd = Helper.ask_choice(hdds, question='Choose the HDD to use as SSD replacement')
+                else:
+                    sys.exit(1)
+            else:
+                print 'No SSD found. At least one SSD (or replacing HDD) is required.'
+                sys.exit(1)
+        elif len(ssds) > 1:
+            ssd = Helper.ask_choice(ssds, question='Choose the SSD to use for Open vStorage')
+        else:
+            ssd = ssds[0]
+        print 'Using {0} as SSD'.format(ssd)
+        for partition in drives[ssd]['partitions']:
+            if partition in mounted:
+                client.run('umount {0}'.format(partition))
+        client.run('parted {0} -s mklabel gpt'.format(ssd))
+        client.run('parted {0} -s mkpart cache 2MB 50%'.format(ssd))
+        client.run('parted {0} -s mkpart db 50% 75%'.format(ssd))
+        client.run('parted {0} -s mkpart mdpath 75% 100%'.format(ssd))
+        client.run('mkfs.ext4 -q {0}1 -L cache'.format(ssd))
+        client.run('mkfs.ext4 -q {0}2 -L db'.format(ssd))
+        client.run('mkfs.ext4 -q {0}3 -L mdpath'.format(ssd))
+
+        client.run('mkdir -p /mnt/db')
+        client.run('mkdir -p /mnt/cache')
+        client.run('mkdir -p /mnt/md')
 
         # Add content to fstab
         new_filesystems = """
@@ -980,9 +1225,9 @@ LABEL=mdpath    /mnt/md    ext4    defaults,nobootwait,noatime,discard    0    2
 
         # Quality mapping
         # Tese mappings were ['unstable', 'default'] and ['default', 'default'] before
-        quality_mapping = {'unstable': ['stable', 'stable'],
-                           'test': ['stable', 'stable'],
-                           'stable': ['stable', 'stable']}
+        quality_mapping = {'unstable': ['stable', 'stable', '1.0.2'],
+                           'test': ['stable', 'stable', '1.0.2'],
+                           'stable': ['stable', 'stable', '1.0.2']}
 
         if not is_local:
             if os.path.exists('/opt/jumpscale/cfg/jpackages/sources.cfg'):
@@ -1084,7 +1329,7 @@ blobstorlocal = jpackages_local
             jp_sources_config.write(jp_openvstorage_repo)
             jp_sources_config.close()
 
-        return quality_mapping[quality_level][1]
+        return quality_mapping[quality_level][1], quality_mapping[quality_level][2]
 
     @staticmethod
     def _install_jscore(client, install_branch):
@@ -1105,7 +1350,7 @@ class Client(object):
     """
 
     @staticmethod
-    def load(ip, password, bypass_local=False):
+    def load(ip, password=None, bypass_local=False):
         """
         Opens a client connection to a remote or local system
         """
@@ -1115,10 +1360,11 @@ class Client(object):
             """
 
             @staticmethod
-            def run(command):
+            def run(command, pty=None):
                 """
                 Executes a command
                 """
+                _ = pty  # Compatibility with Cuisine
                 return check_output(command, shell=True)
 
             @staticmethod
@@ -1128,6 +1374,13 @@ class Client(object):
                 """
                 with open(filename, 'r') as the_file:
                     return the_file.read()
+
+            @staticmethod
+            def file_exists(filename):
+                """
+                Checks whether a filename exists
+                """
+                return os.path.isfile(filename)
 
             @staticmethod
             def file_write(filename, contents):
@@ -1248,13 +1501,13 @@ class Helper(object):
         Asks the user a yes/no question
         """
         if default_value is None:
-            ynstring = ' (y/n):'
+            ynstring = ' (y/n): '
             failuremsg = "Illegal value. Press 'y' or 'n'."
         elif default_value is True:
-            ynstring = ' ([y]/n)'
+            ynstring = ' ([y]/n): '
             failuremsg = "Illegal value. Press 'y' or 'n' (or nothing for default)."
         elif default_value is False:
-            ynstring = ' (y/[n])'
+            ynstring = ' (y/[n]): '
             failuremsg = "Illegal value. Press 'y' or 'n' (or nothing for default)."
         else:
             raise ValueError('Invalid default value {0}'.format(default_value))
@@ -1326,6 +1579,6 @@ if __name__ == '__main__':
     (options, args) = parser.parse_args()
 
     try:
-        Manager.install_node('127.0.0.1', None, create_extra_filesystems=options.filesystems, clean=options.clean)
+        Manager.install_node('127.0.0.1', create_extra_filesystems=options.filesystems, clean=options.clean)
     except KeyboardInterrupt:
         print '\nAborting'

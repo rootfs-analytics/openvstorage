@@ -15,9 +15,11 @@
 """
 VMachine module
 """
+
 import time
 import logging
 
+from subprocess import check_output
 from ovs.celery import celery
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.vmachine import VMachine
@@ -29,10 +31,10 @@ from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.extensions.hypervisor.factory import Factory
 from ovs.lib.vdisk import VDiskController
 from ovs.lib.messaging import MessageController
+from ovs.plugin.provider.configuration import Configuration
 
 
 class VMachineController(object):
-
     """
     Contains all BLL related to VMachines
     """
@@ -69,9 +71,13 @@ class VMachineController(object):
             return False
 
         target_pm = PMachine(pmachineguid)
+        target_hypervisor = Factory.get(target_pm)
 
-        vpool = template_vm.vpool
-        vpool_guids = set([vpool.guid])
+        vpool = None
+        vpool_guids = set()
+        if template_vm.vpool is not None:
+            vpool = template_vm.vpool
+            vpool_guids.add(vpool.guid)
         for disk in template_vm.vdisks:
             vpool = disk.vpool
             vpool_guids.add(vpool.guid)
@@ -80,6 +86,10 @@ class VMachineController(object):
 
         if not template_vm.pmachine.hvtype == target_pm.hvtype:
             raise RuntimeError('Source and target hypervisor not identical')
+
+        # Currently, only one vPool is supported, so we can just use whatever the `vpool` variable above
+        # was set to as 'the' vPool for the code below. This obviously will have to change once vPool mixes
+        # are supported.
 
         target_vsr = None
         source_vsr = None
@@ -106,6 +116,8 @@ class VMachineController(object):
         if name_duplicates is not None and len(name_duplicates) > 0:
             raise RuntimeError('A vMachine with name {0} already exists'.format(name))
 
+        vm_path = target_hypervisor.get_vmachine_path(name, target_vsr.serving_vmachine.machineid)
+
         new_vm = VMachine()
         new_vm.copy_blueprint(template_vm)
         new_vm.vpool = template_vm.vpool
@@ -113,14 +125,13 @@ class VMachineController(object):
         new_vm.name = name
         new_vm.description = description
         new_vm.is_vtemplate = False
-        new_vm.devicename = '{}/{}.vmx'.format(name.replace(' ', '_'), name.replace(' ', '_'))
+        new_vm.devicename = target_hypervisor.clean_vmachine_filename(vm_path)
         new_vm.status = 'CREATED'
         new_vm.save()
 
-        vsrs = [vsr for vsr in template_vm.vpool.vsrs
-                if vsr.serving_vmachine.pmachine_guid == new_vm.pmachine_guid]
+        vsrs = [vsr for vsr in vpool.vsrs if vsr.serving_vmachine.pmachine_guid == new_vm.pmachine_guid]
         if len(vsrs) == 0:
-            raise RuntimeError('Cannot find VSR serving {0} on {1}'.format(new_vm.vpool.name,
+            raise RuntimeError('Cannot find VSR serving {0} on {1}'.format(vpool.name,
                                                                            new_vm.pmachine.name))
         vsrguid = vsrs[0].guid
 
@@ -132,7 +143,8 @@ class VMachineController(object):
                 result = VDiskController.create_from_template(
                     diskguid=disk.guid,
                     devicename=prefix,
-                    location=new_vm.name.replace(' ', '_'),
+                    pmachineguid=target_pm.guid,
+                    machinename=new_vm.name,
                     machineguid=new_vm.guid,
                     vsrguid=vsrguid
                 )
@@ -145,8 +157,7 @@ class VMachineController(object):
 
         try:
             result = target_hv.create_vm_from_template(
-                name, source_vm, disks, target_vsr.storage_ip, target_vsr.mountpoint,
-                esxhost=None, wait=True
+                name, source_vm, disks, target_vsr.storage_ip, target_vsr.mountpoint, wait=True
             )
         except:
             VMachineController.delete(machineguid=new_vm.guid)
@@ -158,27 +169,6 @@ class VMachineController(object):
         return new_vm.guid
 
     @staticmethod
-    @celery.task(name='ovs.machine.create_from_voldrv')
-    def create_from_voldrv(name, vsrid):
-        """
-        This method will create a vmachine based on a given vmx file
-        """
-        name = name.strip('/')
-        if name.endswith('.vmx'):
-            vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-            if vsr is None:
-                raise RuntimeError('VolumeStorageRouter could not be found')
-            pmachine = PMachineList.get_by_vsrid(vsrid)
-            vmachine = VMachineList.get_by_devicename_and_vpool(name, vsr.vpool)
-            if not vmachine:
-                vmachine = VMachine()
-                vmachine.vpool = vsr.vpool
-                vmachine.pmachine = pmachine
-                vmachine.status = 'CREATED'
-            vmachine.devicename = name
-            vmachine.save()
-
-    @staticmethod
     @celery.task(name='ovs.machine.clone')
     def clone(machineguid, timestamp, name, **kwargs):
         """
@@ -188,7 +178,6 @@ class VMachineController(object):
         @param timestamp: timestamp of the disk snapshots to use for the clone
         @param name: name for the new machine
         """
-
         _ = kwargs
         machine = VMachine(machineguid)
 
@@ -201,6 +190,7 @@ class VMachineController(object):
         new_machine = VMachine()
         new_machine.copy_blueprint(machine)
         new_machine.name = name
+        new_machine.pmachine = machine.pmachine
         new_machine.save()
 
         new_disk_guids = []
@@ -215,7 +205,8 @@ class VMachineController(object):
             result = VDiskController.clone(diskguid=currentDisk.guid,
                                            snapshotid=snapshotid,
                                            devicename=prefix,
-                                           location=new_machine.name,
+                                           pmachineguid=new_machine.pmachine_guid,
+                                           machinename=new_machine.name,
                                            machineguid=new_machine.guid)
             new_disk_guids.append(result['diskguid'])
 
@@ -243,7 +234,7 @@ class VMachineController(object):
 
         if machine.pmachine:
             hv = Factory.get(machine.pmachine)
-            hv.delete_vm(machine.hypervisorid, None, True)
+            hv.delete_vm(machine.hypervisorid, True)
 
         for disk in machine.vdisks:
             disk.delete()
@@ -255,16 +246,22 @@ class VMachineController(object):
         """
         This method will delete a vmachine based on the name of the vmx given
         """
-        name = name.strip('/')
-        if name.endswith('.vmx'):
+        pmachine = PMachineList.get_by_vsrid(vsrid)
+        if pmachine.hvtype not in ['VMWARE', 'KVM']:
+            return
+
+        hypervisor = Factory.get(pmachine)
+        name = hypervisor.clean_vmachine_filename(name)
+        if pmachine.hvtype == 'VMWARE':
             vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-            if vsr is None:
-                raise RuntimeError('VolumeStorageRouter could not be found')
-            vm = VMachineList.get_by_devicename_and_vpool(name, vsr.vpool)
-            if vm is not None:
-                MessageController.fire(MessageController.Type.EVENT, {'type': 'vmachine_deleted',
-                                                                      'metadata': {'name': vm.name}})
-                vm.delete(abandon=True)
+            vpool = vsr.vpool
+        else:
+            vpool = None
+        vm = VMachineList.get_by_devicename_and_vpool(name, vpool)
+        if vm is not None:
+            MessageController.fire(MessageController.Type.EVENT, {'type': 'vmachine_deleted',
+                                                                  'metadata': {'name': vm.name}})
+            vm.delete(abandon=True)
 
     @staticmethod
     @celery.task(name='ovs.machine.rename_from_voldrv')
@@ -272,32 +269,33 @@ class VMachineController(object):
         """
         This machine will handle the rename of a vmx file
         """
-        old_name = old_name.strip('/')
-        new_name = new_name.strip('/')
-        # @TODO: When implementing more hypervisors, move part of code to hypervisor factory
-        # vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-        # hypervisor = Factory.get(vsr.serving_vmachine.pmachine)
-        # scenario = hypervisor.get_scenario(old_name, new_name)
-        # if scenario == 'RENAME': f00bar
-        # if scenario == 'UPDATED': f00bar
-        # > This way, this piece of code is hypervisor agnostic
-        vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-        if vsr is None:
-            raise RuntimeError('VolumeStorageRouter could not be found')
-        if old_name.endswith('.vmx') and new_name.endswith('.vmx'):
+        pmachine = PMachineList.get_by_vsrid(vsrid)
+        if pmachine.hvtype not in ['VMWARE', 'KVM']:
+            return
+
+        hypervisor = Factory.get(pmachine)
+        if pmachine.hvtype == 'VMWARE':
+            vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+            vpool = vsr.vpool
+        else:
+            vpool = None
+
+        old_name = hypervisor.clean_vmachine_filename(old_name)
+        new_name = hypervisor.clean_vmachine_filename(new_name)
+        scenario = hypervisor.get_rename_scenario(old_name, new_name)
+        if scenario == 'RENAME':
             # Most likely a change from path. Updaing path
-            vm = VMachineList.get_by_devicename_and_vpool(old_name, vsr.vpool)
+            vm = VMachineList.get_by_devicename_and_vpool(old_name, vpool)
             if vm is not None:
                 vm.devicename = new_name
                 vm.save()
-        elif old_name.endswith('.vmx~') and new_name.endswith('.vmx'):
-            vm = VMachineList.get_by_devicename_and_vpool(new_name, vsr.vpool)
-            # The configuration has been updated (which happens in a tempfile), start a sync
+        elif scenario == 'UPDATE':
+            vm = VMachineList.get_by_devicename_and_vpool(new_name, vpool)
             if vm is None:
                 # The vMachine doesn't seem to exist, so it's likely the create didn't came trough
                 # Let's create it anyway
-                VMachineController.create_from_voldrv(new_name, vsrid)
-            vm = VMachineList.get_by_devicename_and_vpool(new_name, vsr.vpool)
+                VMachineController.update_from_voldrv(new_name, vsrid)
+            vm = VMachineList.get_by_devicename_and_vpool(new_name, vpool)
             if vm is None:
                 raise RuntimeError('Could not create vMachine on rename. Aborting.')
             try:
@@ -326,9 +324,7 @@ class VMachineController(object):
 
         vmachine = VMachine(machineguid)
         if vmachine.hypervisor_status == 'RUNNING':
-            raise RuntimeError('vMachine {0} may not be running to set it as vTemplate'.format(
-                vmachine.name
-            ))
+            raise RuntimeError('vMachine {0} may not be running to set it as vTemplate'.format(vmachine.name))
 
         for disk in vmachine.vdisks:
             VDiskController.set_as_template(diskguid=disk.guid)
@@ -386,8 +382,9 @@ class VMachineController(object):
         #        subtask will now raise an exception earlier in the workflow
         for disk in machine.vdisks:
             if not disk.volumeid:
-                message = 'Missing volumeid on disk {0} - unable to create snapshot for vm {1}' \
-                    .format(disk.guid, machine.guid)
+                message = 'Missing volumeid on disk {0} - unable to create snapshot for vm {1}'.format(
+                    disk.guid, machine.guid
+                )
                 logging.info('Error: {0}'.format(message))
                 raise RuntimeError(message)
 
@@ -452,6 +449,41 @@ class VMachineController(object):
             raise RuntimeError(message)
         else:
             VMachineController.update_vmachine_config(vmachine, vm_object)
+
+    @staticmethod
+    @celery.task(name='ovs.machine.update_from_voldrv')
+    def update_from_voldrv(name, vsrid):
+        """
+        This method will update/create a vmachine based on a given vmx/xml file
+        """
+        pmachine = PMachineList.get_by_vsrid(vsrid)
+        if pmachine.hvtype not in ['VMWARE', 'KVM']:
+            return
+
+        hypervisor = Factory.get(pmachine)
+        name = hypervisor.clean_vmachine_filename(name)
+        if hypervisor.should_process(name):
+            if pmachine.hvtype == 'VMWARE':
+                vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
+                vpool = vsr.vpool
+            else:
+                vpool = None
+            pmachine = PMachineList.get_by_vsrid(vsrid)
+            vmachine = VMachineList.get_by_devicename_and_vpool(name, vpool)
+            if not vmachine:
+                vmachine = VMachine()
+                vmachine.vpool = vpool
+                vmachine.pmachine = pmachine
+                vmachine.status = 'CREATED'
+            vmachine.devicename = name
+            vmachine.save()
+            if pmachine.hvtype == 'KVM':
+                try:
+                    VMachineController.sync_with_hypervisor(vmachine.guid, vsrid)
+                    vmachine.status = 'SYNC'
+                except:
+                    vmachine.status = 'SYNC_NOK'
+                vmachine.save()
 
     @staticmethod
     @celery.task(name='ovs.machine.update_vmachine_config')
@@ -522,3 +554,31 @@ class VMachineController(object):
         except Exception as ex:
             logging.info('Error during vMachine update: {0}'.format(str(ex)))
             raise
+
+    @staticmethod
+    @celery.task(name='ovs.vsa.get_physical_metadata')
+    def get_physical_metadata():
+        """
+        Gets physical information about the machine this task is running on
+        """
+        mountpoints = check_output('mount -v', shell=True).strip().split('\n')
+        mountpoints = [p.split(' ')[2] for p in mountpoints if len(p.split(' ')) > 2
+                       and not p.split(' ')[2].startswith('/dev') and not p.split(' ')[2].startswith('/proc')
+                       and not p.split(' ')[2].startswith('/sys') and not p.split(' ')[2].startswith('/run')
+                       and p.split(' ')[2] != '/']
+        ipaddresses = check_output("ip a | grep 'inet ' | sed 's/\s\s*/ /g' | cut -d ' ' -f 3 | cut -d '/' -f 1", shell=True).strip().split('\n')
+        ipaddresses = [ip.strip() for ip in ipaddresses]
+        xmlrpcport = Configuration.get('volumedriver.filesystem.xmlrpc.port')
+        return {'mountpoints': mountpoints,
+                'ipaddresses': ipaddresses,
+                'xmlrpcport': xmlrpcport}
+
+    @staticmethod
+    @celery.task(name='ovs.vsa.add_vpool')
+    def add_vpool(parameters):
+        """
+        Add a vPool to the machine this task is running on
+        """
+        from ovs.extensions.grid.manager import Manager
+
+        Manager.init_vpool(parameters['vsa_ip'], parameters['vpool_name'], parameters=parameters)

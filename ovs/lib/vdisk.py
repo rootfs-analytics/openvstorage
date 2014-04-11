@@ -22,11 +22,14 @@ import uuid
 from ovs.celery import celery
 from ovs.dal.hybrids.vdisk import VDisk
 from ovs.dal.hybrids.vmachine import VMachine
+from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
 from ovs.dal.lists.vdisklist import VDiskList
 from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
 from ovs.dal.lists.vpoollist import VPoolList
+from ovs.dal.lists.pmachinelist import PMachineList
 from ovs.dal.hybrids.vpool import VPool
+from ovs.extensions.hypervisor.factory import Factory
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
 
 
@@ -43,12 +46,12 @@ class VDiskController(object):
         """
         if vpool_guid is not None:
             vpool = VPool(vpool_guid)
-            vsr_client = VolumeStorageRouterClient().load(vpool=vpool)
+            vsr_client = VolumeStorageRouterClient().load(vpool)
             response = vsr_client.list_volumes()
         else:
             response = []
             for vpool in VPoolList.get_vpools():
-                vsr_client = VolumeStorageRouterClient().load(vpool=vpool)
+                vsr_client = VolumeStorageRouterClient().load(vpool)
                 response.extend(vsr_client.list_volumes())
         return response
 
@@ -76,10 +79,10 @@ class VDiskController(object):
         @param volumename: volume id of the disk
         @param volumesize: size of the volume
         """
+        pmachine = PMachineList.get_by_vsrid(vsrid)
         vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-        if vsr is None:
-            raise RuntimeError('VolumeStorageRouter could not be found')
-        volumepath = volumepath.replace('-flat.vmdk', '.vmdk').strip('/')
+        hypervisor = Factory.get(pmachine)
+        volumepath = hypervisor.clean_backing_disk_filename(volumepath)
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
         if disk is None:
             disk = VDiskList.get_by_devicename_and_vpool(volumepath, vsr.vpool)
@@ -93,7 +96,7 @@ class VDiskController(object):
 
     @staticmethod
     @celery.task(name='ovs.disk.rename_from_voldrv')
-    def rename_from_voldrv(volumename, volume_old_path, volume_new_path):
+    def rename_from_voldrv(volumename, volume_old_path, volume_new_path, vsrid):
         """
         Rename a disk
         Triggered by volumedriver messages
@@ -102,6 +105,10 @@ class VDiskController(object):
         @param volume_old_path: old path on hypervisor to the volume
         @param volume_new_path: new path on hypervisor to the volume
         """
+        pmachine = PMachineList.get_by_vsrid(vsrid)
+        hypervisor = Factory.get(pmachine)
+        volume_old_path = hypervisor.clean_backing_disk_filename(volume_old_path)
+        volume_new_path = hypervisor.clean_backing_disk_filename(volume_new_path)
         disk = VDiskList.get_vdisk_by_volumeid(volumename)
         if disk:
             logging.info('Move disk {} from {} to {}'.format(disk.name,
@@ -112,7 +119,7 @@ class VDiskController(object):
 
     @staticmethod
     @celery.task(name='ovs.disk.clone')
-    def clone(diskguid, snapshotid, location, devicename, machineguid=None, **kwargs):
+    def clone(diskguid, snapshotid, devicename, pmachineguid, machinename, machineguid=None, **kwargs):
         """
         Clone a disk
 
@@ -123,14 +130,16 @@ class VDiskController(object):
         @param machineguid: guid of the machine to assign disk to
         """
         _ = kwargs
-        description = '{} {}'.format(location, devicename)
+        pmachine = PMachine(pmachineguid)
+        hypervisor = Factory.get(pmachine)
+        description = '{} {}'.format(machinename, devicename)
         properties_to_clone = ['description', 'size', 'type', 'retentionpolicyguid',
                                'snapshotpolicyguid', 'autobackup']
 
         new_disk = VDisk()
         disk = VDisk(diskguid)
         _log = 'Clone snapshot {} of disk {} to location {}'
-        _location = '{}/{}-flat.vmdk'.format(location, devicename)
+        _location = hypervisor.get_backing_disk_path(machinename, devicename)
         _id = '{}'.format(disk.volumeid)
         _snap = '{}'.format(snapshotid)
         logging.info(_log.format(_snap, disk.name, _location))
@@ -140,12 +149,13 @@ class VDiskController(object):
         new_disk.name = '{}-clone'.format(disk.name)
         new_disk.description = description
         new_disk.volumeid = volumeid
-        new_disk.devicename = '{}.vmdk'.format(devicename)
+        new_disk.devicename = hypervisor.clean_backing_disk_filename(_location)
         new_disk.parentsnapshot = snapshotid
         new_disk.machine = VMachine(machineguid) if machineguid else disk.machine
         new_disk.save()
-        return {'diskguid': new_disk.guid, 'name': new_disk.name,
-                'backingdevice': '{}/{}.vmdk'.format(location, devicename)}
+        return {'diskguid': new_disk.guid,
+                'name': new_disk.name,
+                'backingdevice': _location}
 
     @staticmethod
     @celery.task(name='ovs.disk.create_snapshot')
@@ -215,7 +225,7 @@ class VDiskController(object):
 
     @staticmethod
     @celery.task(name='ovs.disk.create_from_template')
-    def create_from_template(diskguid, location, devicename, machineguid=None, vsrguid=None):
+    def create_from_template(diskguid, machinename, devicename, pmachineguid, machineguid=None, vsrguid=None):
         """
         Create a disk from a template
 
@@ -226,7 +236,11 @@ class VDiskController(object):
         @return diskguid: guid of new disk
         """
 
-        description = '{} {}'.format(location, devicename)
+        pmachine = PMachine(pmachineguid)
+        hypervisor = Factory.get(pmachine)
+        disk_path = hypervisor.get_disk_path(machinename, devicename)
+
+        description = '{} {}'.format(machinename, devicename)
         properties_to_clone = [
             'description', 'size', 'type', 'retentionpolicyid',
             'snapshotpolicyid', 'has_autobackup', 'vmachine', 'vpool']
@@ -236,17 +250,14 @@ class VDiskController(object):
             raise RuntimeError('The given disk does not belong to a template')
 
         if vsrguid is not None:
-            vsr = VolumeStorageRouter(vsrguid)
-            vsr_client = VolumeStorageRouterClient().load(vsr.vpool, vsr_guid=vsr.guid)
+            vsrid = VolumeStorageRouter(vsrguid).vsrid
         else:
-            vsr_client = disk.vsr_client
-
-        device_location = '{}/{}.vmdk'.format(location, devicename)
+            vsrid = disk.vsrid
 
         new_disk = VDisk()
         new_disk.copy_blueprint(disk, include=properties_to_clone)
         new_disk.vpool = disk.vpool
-        new_disk.devicename = device_location
+        new_disk.devicename = hypervisor.clean_backing_disk_filename(disk_path)
         new_disk.parent_vdisk = disk
         new_disk.name = '{}-clone'.format(disk.name)
         new_disk.description = description
@@ -254,10 +265,10 @@ class VDiskController(object):
         new_disk.save()
 
         logging.info('Create disk from template {} to new disk {} to location {}'.format(
-            disk.name, new_disk.name, device_location
+            disk.name, new_disk.name, disk_path
         ))
         try:
-            volumeid = vsr_client.create_clone_from_template('/' + device_location, str(disk.volumeid))
+            volumeid = disk.vsr_client.create_clone_from_template(disk_path, str(disk.volumeid), node_id=str(vsrid))
             new_disk.volumeid = volumeid
             new_disk.save()
         except Exception as ex:
@@ -266,4 +277,4 @@ class VDiskController(object):
             raise
 
         return {'diskguid': new_disk.guid, 'name': new_disk.name,
-                'backingdevice': device_location.strip('/')}
+                'backingdevice': disk_path}
