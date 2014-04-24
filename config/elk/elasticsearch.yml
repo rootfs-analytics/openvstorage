@@ -158,7 +158,7 @@ path.work: /opt/data/elasticsearch/tmp
 
 # Path to log files:
 #
-path.logs: /opt/data/elasticsearch/logs
+path.logs: /var/log/elasticsearch
 
 # Path to where plugins are installed:
 #
