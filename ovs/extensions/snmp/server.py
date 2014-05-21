@@ -138,13 +138,13 @@ class SNMPServer():
         Register a custom oid - agnostic
         """
         return_types = {str: v2c.OctetString,
-                        int: v2c.Counter64}
+                        int: v2c.Counter32}
 
         oid = self.naming_scheme % (class_oid, instance_oid, attribute_oid)
         return_type = return_types.get(atype, v2c.OctetString)
         OID = tuple(int(x) for x in oid.split('.'))
 
-        print('Registering OID %s for %s' % (str(OID), get_function))
+        print('Registering OID %s for %s return type %s ' % (str(OID), get_function, return_type))
         def _class():
             class CustomScalar(self.MibScalarInstance):
                 def getValue(class_, name, idx): #@NoSelf
@@ -161,3 +161,10 @@ class SNMPServer():
         self.mibBuilder.exportSymbols(oid, self.MibScalar(OID[:-1], return_type()),
                                       _class()(OID[:-1], (OID[-1],), return_type()))
         return oid
+
+    def register_polling_function(self, function, interval_sec):
+        """
+        Register a custom polling function
+        e.g. Periodically check for model changes
+        """
+        self.snmpEngine.transportDispatcher.registerTimerCbFun(function, interval_sec)
