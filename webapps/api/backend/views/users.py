@@ -37,6 +37,8 @@ class UserViewSet(viewsets.ViewSet):
     Information about Users
     """
     permission_classes = (IsAuthenticated,)
+    prefix = r'users'
+    base_name = 'users'
 
     @staticmethod
     def _get_object(guid):
