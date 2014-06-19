@@ -881,7 +881,7 @@ print Service.stop_service('{0}')
         """
         # Scan block devices
         drive_lines = fs_client.run(
-            "ls -l /dev/* | grep -E '/dev/(sd..?|fio..?)' | sed 's/\s\s*/ /g' | cut -d ' ' -f 10"
+            "ls -l /dev/* | grep -E '/dev/(sd..?|fio..?|vd..?|xvd..?)' | sed 's/\s\s*/ /g' | cut -d ' ' -f 10"
         ).strip().split('\n')
         drives = {}
         for drive in drive_lines:
@@ -889,11 +889,11 @@ print Service.stop_service('{0}')
             if partition == '':
                 continue
             drive = partition.translate(None, digits)
-            if '/dev/sd' in drive:
+            if '/dev/sd' in drive or '/dev/vd' in drive or '/dev/xvd' in drive:
                 if drive not in drives:
                     identifier = drive.replace('/dev/', '')
-                    if fs_client.run('cat /sys/block/{0}/device/type'.format(identifier)).strip() == '0' \
-                            and fs_client.run('cat /sys/block/{0}/removable'.format(identifier)).strip() == '0':
+                    if fs_client.run('cat /sys/block/{0}/device/type 2>/dev/null || echo "0"'.format(identifier)).strip() == '0' \
+                            and fs_client.run('cat /sys/block/{0}/removable 2>/dev/null || echo "0"'.format(identifier)).strip() == '0':
                         ssd_output = fs_client.run(
                             "/usr/bin/lsscsi | grep 'FUSIONIO' | grep {0} || true".format(drive)
                         ).strip()
