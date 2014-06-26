@@ -196,7 +196,12 @@ class Sdk(object):
                 continue
 
             # Load backing filename
-            backingfilename = disk['source']['file']
+            if 'file' in disk['source']:
+                backingfilename = disk['source']['file']
+            elif 'dev' in disk['source']:
+                backingfilename = disk['source']['dev']
+            else:
+                continue
             match = re.search(regex, backingfilename)
             if match is None:
                 continue
@@ -309,12 +314,16 @@ class Sdk(object):
             self.ssh_run('rm {0}'.format(found_file))
             logger.info('File on vpool deleted: {0}'.format(found_file))
         if vm_object:
+            found_file = ''
             # VM partially created, most likely we have disks
             for disk in self._get_disks(vm_object):
                 if disk['device'] == 'cdrom':
                     continue
-                found_file = disk.get('source', {}).get('file', '')
-                if os.path.exists(found_file) and os.path.isfile(found_file):
+                if 'file' in disk['source']:
+                    found_file = disk['source']['file']
+                elif 'dev' in disk['source']:
+                    found_file = disk['source']['dev']
+                if found_file and os.path.exists(found_file) and os.path.isfile(found_file):
                     self.ssh_run('rm {0}'.format(found_file))
                     logger.info('File on vpool deleted: {0}'.format(found_file))
             vm_object.undefine()
