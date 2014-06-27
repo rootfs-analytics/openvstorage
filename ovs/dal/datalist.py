@@ -20,7 +20,7 @@ import hashlib
 import json
 import copy
 from random import randint
-from ovs.dal.helpers import Descriptor, Toolbox
+from ovs.dal.helpers import Descriptor, Toolbox, HybridRunner
 from ovs.dal.exceptions import ObjectNotFoundException
 from ovs.extensions.storage.volatilefactory import VolatileFactory
 from ovs.extensions.storage.persistentfactory import PersistentFactory
@@ -32,6 +32,8 @@ class DataList(object):
     """
     The DataList is a class that provide query functionality for the hybrid DAL
     """
+
+    hybrids = None
 
     class Select(object):
         """
@@ -71,6 +73,9 @@ class DataList(object):
         """
         # Initialize super class
         super(DataList, self).__init__()
+
+        if DataList.hybrids is None:
+            DataList.hybrids = HybridRunner.get_hybrids()
 
         if key is not None:
             self._key = key
@@ -186,6 +191,9 @@ class DataList(object):
             query_type = self._query['query']['type']
             query_data = self._query['data']
             query_object = self._query['object']
+            query_object_name = Toolbox.get_class_fullname(query_object)
+            if query_object_name in DataList.hybrids:
+                query_object = DataList.hybrids[query_object_name]
 
             invalidations = {query_object.__name__.lower(): ['__all']}
             DataList._build_invalidations(invalidations, query_object, items)

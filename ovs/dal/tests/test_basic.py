@@ -38,6 +38,7 @@ class Basic(TestCase):
     VolatileMutex = None
     TestMachine = None
     TestDisk = None
+    TestExtendedDisk = None
     DataList = None
     HybridRunner = None
     Descriptor = None
@@ -71,6 +72,7 @@ class Basic(TestCase):
         from ovs.extensions.generic.volatilemutex import VolatileMutex
         from ovs.dal.hybrids.t_testmachine import TestMachine
         from ovs.dal.hybrids.t_testdisk import TestDisk
+        from ovs.dal.hybrids.t_testextendeddisk import TestExtendedDisk
         global RelationMapper
         global HybridRunner
         global Descriptor
@@ -79,7 +81,9 @@ class Basic(TestCase):
         global VolatileMutex
         global TestMachine
         global TestDisk
-        _ = VDisk, VolatileMutex, TestMachine, TestDisk, DataList, HybridRunner, Descriptor, RelationMapper
+        global TestExtendedDisk
+        _ = VDisk, VolatileMutex, TestMachine, TestDisk, TestExtendedDisk, DataList, \
+            HybridRunner, Descriptor, RelationMapper
 
         # Cleaning storage
         VolatileFactory.store.clean()
@@ -280,7 +284,7 @@ class Basic(TestCase):
         * All dynamic properties should be implemented
         """
         # Some stuff here to dynamically test all hybrid properties
-        for cls in HybridRunner.get_hybrids():
+        for cls in HybridRunner.get_hybrids().values():
             relation_info = RelationMapper.load_foreign_relations(cls)
             remote_properties_n = []
             remote_properties_1 = []
@@ -946,10 +950,10 @@ class Basic(TestCase):
         disk_2_2.machine = machine_2
         disk_2_2.save()
         # Load relations
-        disks_1 = DataList.get_relation_set(TestDisk, 'machine', TestMachine, 'disks', machine_1.guid)
+        disks_1 = DataList.get_relation_set(TestExtendedDisk, 'machine', TestMachine, 'disks', machine_1.guid)
         self.assertEqual(len(disks_1.data), 2, 'There should be 2 child disks')
         self.assertFalse(disks_1.from_cache, 'The relation should not be loaded from cache')
-        disks_2 = DataList.get_relation_set(TestDisk, 'machine', TestMachine, 'disks', machine_2.guid)
+        disks_2 = DataList.get_relation_set(TestExtendedDisk, 'machine', TestMachine, 'disks', machine_2.guid)
         self.assertEqual(len(disks_2.data), 2, 'There should be 2 child disks')
         self.assertTrue(disks_2.from_cache, 'The relation should be loaded from cache')
 

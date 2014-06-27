@@ -110,6 +110,9 @@ class HybridRunner(object):
         """
         Yields all hybrid classes
         """
+        base_hybrids = []
+        inherit_table = {}
+        translation_table = {}
         path = os.path.join(os.path.dirname(__file__), 'hybrids')
         for filename in os.listdir(path):
             if os.path.isfile(os.path.join(path, filename)) and filename.endswith('.py'):
@@ -117,15 +120,56 @@ class HybridRunner(object):
                 module = imp.load_source(name, os.path.join(path, filename))
                 for member in inspect.getmembers(module):
                     if inspect.isclass(member[1]) \
-                            and member[1].__module__ == name \
-                            and 'DataObject' in [base.__name__ for base in member[1].__bases__]:
-                        yield member[1]
+                            and member[1].__module__ == name:
+                        current_class = member[1]
+                        current_name = Toolbox.get_class_fullname(current_class)
+                        if current_name not in translation_table:
+                            translation_table[current_name] = current_class
+                        if 'DataObject' in current_class.__base__.__name__:
+                            if current_name not in base_hybrids:
+                                base_hybrids.append(current_name)
+                            else:
+                                raise RuntimeError('Duplicate base hybrid found: {0}'.format(current_name))
+                        elif 'DataObject' not in current_class.__name__:
+                            structure = []
+                            this_class = None
+                            for this_class in current_class.__mro__:
+                                if 'DataObject' in this_class.__name__:
+                                    break
+                                structure.append(Toolbox.get_class_fullname(this_class))
+                            if 'DataObject' in this_class.__name__:
+                                for index in reversed(range(1, len(structure))):
+                                    if structure[index] in inherit_table:
+                                        raise RuntimeError('Duplicate hybrid inheritance: {0}({1})'.format(structure[index - 1], structure[index]))
+                                    inherit_table[structure[index]] = structure[index - 1]
+        items_replaced = True
+        hybrids = {hybrid: None for hybrid in base_hybrids[:]}
+        while items_replaced is True:
+            items_replaced = False
+            for hybrid, replacement in inherit_table.iteritems():
+                if hybrid in hybrids.keys() and hybrids[hybrid] is None:
+                    hybrids[hybrid] = replacement
+                    items_replaced = True
+                if hybrid in hybrids.values():
+                    for item in hybrids.keys():
+                        if hybrids[item] == hybrid:
+                            hybrids[item] = replacement
+                    items_replaced = True
+        return {hybrid: translation_table[replacement] if replacement is not None else translation_table[hybrid]
+                for hybrid, replacement in hybrids.iteritems()}
 
 
 class Toolbox(object):
     """
     Generic class for various methods
     """
+
+    @staticmethod
+    def get_class_fullname(hybrid_class):
+        """
+        Returns a full, unique name of a hybrid class
+        """
+        return '{0}.{1}'.format(hybrid_class.__module__.replace('ovs.dal.hybrids.', ''), hybrid_class.__name__)
 
     @staticmethod
     def try_get(key, fallback):

@@ -18,7 +18,7 @@ DataObject module
 import uuid
 import copy
 from ovs.dal.exceptions import ObjectNotFoundException, ConcurrencyException, LinkedObjectException
-from ovs.dal.helpers import Descriptor, Toolbox
+from ovs.dal.helpers import Descriptor, Toolbox, HybridRunner
 from ovs.dal.relations.relations import RelationMapper
 from ovs.dal.dataobjectlist import DataObjectList
 from ovs.dal.datalist import DataList
@@ -32,11 +32,21 @@ class MetaClass(type):
     """
     This metaclass provides dynamic __doc__ generation feeding doc generators
     """
+
     def __new__(mcs, name, bases, dct):
         """
         Overrides instance creation of all DataObject instances
         """
         if name != 'DataObject':
+            for internal in ['_blueprint', '_relations', '_expiry']:
+                data = {}
+                for base in bases:
+                    if hasattr(base, internal):
+                        data.update(getattr(base, internal))
+                if '_{0}_{1}'.format(name, internal) in dct:
+                    data.update(dct.pop('_{0}_{1}'.format(name, internal)))
+                dct[internal] = data
+
             for attribute, default in dct['_blueprint'].iteritems():
                 docstring = default[2] if len(default) == 3 else ''
                 if isinstance(default[1], type):
@@ -54,7 +64,11 @@ class MetaClass(type):
                     doc='[relation] one-to-many relation with %s.%s\n@type: %s' % (itemtype, relation[1], itemtype)
                 )
             for attribute, info in dct['_expiry'].iteritems():
-                docstring = dct['_%s' % attribute].__doc__.strip()
+                if bases[0].__name__ == 'DataObject':
+                    method = dct['_%s' % attribute]
+                else:
+                    method = [getattr(base, '_%s' % attribute) for base in bases if hasattr(base, '_%s' % attribute)][0]
+                docstring = method.__doc__.strip()
                 if isinstance(info[1], type):
                     itemtype = info[1].__name__
                     extra_info = ''
@@ -62,7 +76,7 @@ class MetaClass(type):
                     itemtype = 'Enum(%s)' % info[1][0].__class__.__name__
                     extra_info = '(enum values: %s)' % ', '.join([str(item) for item in info[1]])
                 dct[attribute] = property(
-                    fget=dct['_%s' % attribute],
+                    fget=method,
                     doc='[dynamic] (%ds) %s %s\n@rtype: %s' % (info[0], docstring, extra_info, itemtype)
                 )
 
@@ -91,14 +105,29 @@ class DataObject(object):
     ## Attributes
     #######################
 
+    hybrids = None
+
     # Properties that needs to be overwritten by implementation
-    _blueprint = None            # Blueprint data of the objec type
-    _expiry = None               # Timeout of readonly object properties cache
-    _relations = None            # Blueprint for relations
+    _blueprint = {}            # Blueprint data of the objec type
+    _expiry = {}               # Timeout of readonly object properties cache
+    _relations = {}            # Blueprint for relations
 
     #######################
     ## Constructor
     #######################
+
+    def __new__(cls, *args, **kwargs):
+        """
+        Initializes the class
+        """
+        if DataObject.hybrids is None:
+            DataObject.hybrids = HybridRunner.get_hybrids()
+        class_name = Toolbox.get_class_fullname(cls)
+        if class_name in DataObject.hybrids:
+            new_class = DataObject.hybrids[class_name]
+            if Toolbox.get_class_fullname(new_class) != class_name:
+                return super(cls, new_class).__new__(new_class, *args, **kwargs)
+        return super(DataObject, cls).__new__(cls, *args, **kwargs)
 
     def __init__(self, guid=None, data=None, datastore_wins=False):
         """

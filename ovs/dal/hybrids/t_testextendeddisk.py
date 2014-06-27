@@ -13,20 +13,18 @@
 # limitations under the License.
 
 """
-Role module
+ExtendedDisk module
 """
-from ovs.dal.dataobject import DataObject
+from ovs.dal.hybrids.t_testdisk import TestDisk
 
 
-class Role(DataObject):
+class TestExtendedDisk(TestDisk):
     """
-    The Role class represents a Role. A Role is used to allow execution of a certain set of
-    actions. E.g. a "Viewer" Role can view all data but has no update/write permission.
+    This ExtendedDisk object is used for running unittests.
+    WARNING: These properties should not be changed
     """
     # pylint: disable=line-too-long
-    __blueprint = {'name':        (None, str, 'Name of the Role'),
-                   'code':        (None, str, 'Contains a code which is referenced from the API code'),
-                   'description': (None, str, 'Description of the Role')}
+    __blueprint = {'extended': (None, str, 'Extended property')}
     __relations = {}
     __expiry = {}
     # pylint: enable=line-too-long
