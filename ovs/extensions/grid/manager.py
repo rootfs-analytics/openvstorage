@@ -506,7 +506,7 @@ arakoon_cluster.createDirs(arakoon_cluster.listLocalNodes()[0])
 from ovs.plugin.provider.net import Net
 Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
 """ % {'ip': ip,
-     'host': new_node_hostname}
+       'host': new_node_hostname}
                 Manager._exec_python(client, update_hosts_file)
                 if node != ip:
                     client_node.run('jsprocess enable -n rabbitmq')
@@ -519,7 +519,7 @@ Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
 from ovs.plugin.provider.net import Net
 Net.updateHostsFile(hostsfile='/etc/hosts', ip='%(ip)s', hostname='%(host)s')
 """ % {'ip': subnode,
-     'host': node_hostname}
+       'host': node_hostname}
                         client = Client.load(ip)
                         Manager._exec_python(client, update_hosts_file)
 
@@ -819,6 +819,8 @@ if Service.has_service('{0}'):
         mountpoints = client.run('mount -v').strip().split('\n')
         mountpoints = [p.split(' ')[2] for p in mountpoints if
                        len(p.split(' ')) > 2 and ('/mnt/' in p.split(' ')[2] or '/var' in p.split(' ')[2])]
+        mountpoint_bfs = ''
+        directories_to_create = []
 
         if vpool is None:
             vpool = VPool()
@@ -829,6 +831,8 @@ if Service.has_service('{0}'):
             connection_host = connection_port = connection_username = connection_password = None
             if vpool.backend_type in ['LOCAL', 'DISTRIBUTED']:
                 vpool.backend_metadata = {'backend_type': 'LOCAL'}
+                mountpoint_bfs = parameters.get('mountpoint_bfs') or Helper.ask_string('Specify {0} storage backend directory'.format(vpool.backend_type.lower()))
+                directories_to_create.append(mountpoint_bfs)
             if vpool.backend_type == 'REST':
                 connection_host = parameters.get('connection_host') or Helper.ask_string('Provide REST ip address')
                 connection_port = parameters.get('connection_port') or Helper.ask_integer('Provide REST connection port', min_value=1, max_value=65535)
@@ -846,10 +850,13 @@ if Service.has_service('{0}'):
                                                                                           max_value=65535)
                 connection_username = parameters.get('connection_username') or Helper.ask_string('Specify S3 access key')
                 connection_password = parameters.get('connection_password') or getpass.getpass()
+                strict_consistency = 'false' if vpool.backend_type in ('SWIFT_S3') else 'true'
                 vpool.backend_metadata = {'s3_connection_host': connection_host,
                                           's3_connection_port': connection_port,
                                           's3_connection_username': connection_username,
                                           's3_connection_password': connection_password,
+                                          's3_connection_flavour': 'S3',
+                                          's3_connection_strict_consistency': strict_consistency,
                                           's3_connection_verbose_logging': 1,
                                           'backend_type': 'S3'}
 
@@ -874,16 +881,6 @@ if Service.has_service('{0}'):
                                                                                  default_value=Helper.find_in_list(mountpoints, 'tmp'))
         if mountpoint_temp in mountpoints:
             mountpoints.remove(mountpoint_temp)
-        mountpoint_dfs_default = Helper.find_in_list(mountpoints, 'local')
-        if vpool.backend_type in ('CEPH_S3', 'AMAZON_S3', 'SWIFT_S3'):
-            mountpoint_dfs = parameters.get('mountpoint_dfs') or Helper.ask_string(message='Enter a mountpoint for the S3 backend',
-                                                                                   default_value='/mnt/dfs/{}'.format(vpool.name))
-        else:
-            mountpoint_dfs = parameters.get('mountpoint_dfs') or Helper.ask_choice(mountpoints,
-                                                                                   question='Select distributed FS mountpoint',
-                                                                                   default_value=Helper.find_in_list(mountpoints, 'dfs'))
-            if mountpoint_dfs in mountpoints:
-                mountpoints.remove(mountpoint_dfs)
         mountpoint_md = parameters.get('mountpoint_md') or Helper.ask_choice(mountpoints,
                                                                              question='Select metadata mountpoint',
                                                                              default_value=Helper.find_in_list(mountpoints, 'md'))
@@ -895,13 +892,14 @@ if Service.has_service('{0}'):
         if mountpoint_cache in mountpoints:
             mountpoints.remove(mountpoint_cache)
 
-        directories_to_create = [mountpoint_temp, mountpoint_md, mountpoint_cache]
+        directories_to_create.append(mountpoint_temp)
+        directories_to_create.append(mountpoint_md)
+        directories_to_create.append(mountpoint_cache)
+
         if vpool.backend_type == 'DISTRIBUTED':
-            volumes_directory = '{0}/bfs'.format(mountpoint_dfs)
+            volumes_directory = '{0}/bfs'.format(mountpoint_bfs)
             vpool.backend_metadata['local_connection_path'] = volumes_directory
             directories_to_create.append(volumes_directory)
-            mountpoint_dfs = '{0}/dfs'.format(mountpoint_dfs)
-        directories_to_create.append(mountpoint_dfs)
 
         client = Client.load(ip)
         dir_create_script = """
@@ -977,7 +975,7 @@ for directory in {0}:
 
         readcaches = [{'path': readcache, 'size': readcache_size}]
         scocaches = [{'path': scocache, 'size': scocache_size}]
-        filesystem_config = {'fs_backend_path': mountpoint_dfs}
+        filesystem_config = {'fs_backend_path': mountpoint_bfs}
         volumemanager_config = {'metadata_path': metadatapath, 'tlog_path': tlogpath}
         vsr_config_script = """
 from ovs.plugin.provider.configuration import Configuration
@@ -1014,7 +1012,7 @@ vsr_configuration.configure_filedriver(fd_config)
         vsr.mountpoint = '/mnt/{0}'.format(vpool_name)
         vsr.mountpoint_temp = mountpoint_temp
         vsr.mountpoint_cache = mountpoint_cache
-        vsr.mountpoint_dfs = mountpoint_dfs
+        vsr.mountpoint_bfs = mountpoint_bfs
         vsr.mountpoint_md = mountpoint_md
         vsr.serving_vmachine = vsa
         vsr.vpool = vpool
@@ -1046,10 +1044,6 @@ for filename in {1}:
         fc_cmd = '/usr/bin/failovercachehelper --config-file={0} --logfile={1}'.format(voldrv_config_file, log_file)
         fc_name = 'failovercache_{0}'.format(vpool_name)
 
-
-        pre_start_script = ''
-        post_stop_ceph = ''
-
         params = {'<VPOOL_MOUNTPOINT>': vsr.mountpoint,
                   '<HYPERVISOR_TYPE>': vsa.pmachine.hvtype,
                   '<VPOOL_NAME>': vpool_name}
@@ -1079,47 +1073,6 @@ fstab = Fstab()
 fstab.remove_config_by_directory('{0}')
 fstab.add_config('{1}', '{0}', '{2}', '{3}', '{4}', '{5}')
 """
-
-        if mountpoint_dfs_default and mountpoint_dfs_default != vsr.mountpoint_dfs:
-            client.run('umount {0} || true'.format(mountpoint_dfs_default))
-            client.run('mkdir -p {0}'.format(vsr.mountpoint_dfs))
-            fstab_script = fstab_script_remove.format(mountpoint_dfs_default)
-            Manager._exec_python(client, fstab_script)
-        if vpool.backend_type == 'CEPH_S3':
-            # If using CEPH_S3, then help setting up the ceph connection - for now
-            if Helper.find_in_list(mountpoints, vsr.mountpoint_dfs):
-                client.run('umount {0} || true'.format(vsr.mountpoint_dfs))
-            ceph_ok = Manager._check_ceph(client)
-            if not ceph_ok:
-                # First, try to copy them over
-                for vpool_vsr in vpool.vsrs:
-                    if vpool_vsr.guid != vsr.guid:
-                        client.dir_ensure('/etc/ceph', True)
-                        for cfg_file in ['/etc/ceph/ceph.conf', '/etc/ceph/ceph.keyring']:
-                            remote_client = Client.load(vpool_vsr.serving_vmachine.ip)
-                            cfg_content = remote_client.file_read(cfg_file)
-                            client = Client.load(ip)
-                            client.file_write(cfg_file, cfg_content)
-                        client.file_attribs('/etc/ceph/ceph.keyring', mode=644)
-                        break
-                ceph_ok = Manager._check_ceph(client)
-            if not ceph_ok:
-                # If not yet ok, let the user copy the files
-                print Helper.boxed_message(
-                    ['No or incomplete configuration files found for your Ceph S3 compatible storage backend',
-                     'Now is the time to copy following files',
-                     ' CEPH_SERVER:/etc/ceph/ceph.conf -> /etc/ceph/ceph.conf',
-                     ' CEPH_SERVER:/etc/ceph/ceph.client.admin.keyring -> /etc/ceph/ceph.keyring',
-                     'to make sure we can connect our ceph filesystem',
-                     'When done continue the initialization here'])
-                ceph_continue = Helper.ask_yesno('Continue initialization', default_value=False)
-                if not ceph_continue:
-                    raise RuntimeError('Exiting initialization')
-                ceph_ok = Manager._check_ceph(client)
-                if not ceph_ok:
-                    raise RuntimeError('Ceph config still not ok, exiting initialization')
-
-            client.run('mkdir -p {0}'.format(vsr.mountpoint_dfs))
 
         if vsa.pmachine.hvtype == 'VMWARE':
             Manager.init_exportfs(client, vpool.name)
@@ -1218,19 +1171,6 @@ if Service.has_service('{0}'):
     Service.remove_service(domain='openvstorage', name='{0}')
 """.format(service))
 
-        if vpool.backend_type == 'CEPH_S3':
-            client = Client.load(ip)
-            fstab_script_add = """
-from ovs.extensions.fs.fstab import Fstab
-fstab = Fstab()
-fstab.remove_config_by_directory('{0}')
-"""
-            fstab_script = fstab_script_add.format(vsr.mountpoint_dfs)
-            Manager._exec_python(client, fstab_script)
-            if client.file_exists(vsr.mountpoint_dfs):
-                client.run('umount {0} || true'.format(vsr.mountpoint_dfs), pty=False)
-                client.run('rm -rf {0}'.format(vsr.mountpoint_dfs))
-
         # Reconfigure volumedriver
         if vsrs_left:
             voldrv_arakoon_cluster_id = str(Manager._read_remote_config(client, 'volumedriver.arakoon.clusterid'))
@@ -1284,17 +1224,6 @@ if Service.has_service('{0}'):
         else:
             # Final model cleanup
             vpool.delete()
-
-    @staticmethod
-    def _check_ceph(client):
-        ceph_config_dir = '/etc/ceph'
-        if not client.dir_exists(ceph_config_dir):
-            return False
-        if not client.file_exists(os.path.join(ceph_config_dir, 'ceph.conf')) or \
-                not client.file_exists(os.path.join(ceph_config_dir, 'ceph.keyring')):
-            return False
-        client.file_attribs(os.path.join(ceph_config_dir, 'ceph.keyring'), mode=644)
-        return True
 
     @staticmethod
     def _configure_amqp_to_volumedriver(client, vpname=None):
@@ -1505,20 +1434,16 @@ print Configuration.get('{0}')
                     client.run('umount {0}'.format(partition))
             client.run('parted {0} -s mklabel gpt'.format(hdd))
             client.run('parted {0} -s mkpart backendfs 2MB 80%'.format(hdd))
-            client.run('parted {0} -s mkpart distribfs 80% 90%'.format(hdd))
-            client.run('parted {0} -s mkpart tempfs 90% 100%'.format(hdd))
+            client.run('parted {0} -s mkpart tempfs 80% 100%'.format(hdd))
             client.run('mkfs.ext4 -q {0}1 -L backendfs'.format(hdd))
-            client.run('mkfs.ext4 -q {0}2 -L distribfs'.format(hdd))
             client.run('mkfs.ext4 -q {0}3 -L tempfs'.format(hdd))
 
             extra_mountpoints = """
 LABEL=backendfs /mnt/bfs         ext4    defaults,nobootwait,noatime,discard    0    2
-LABEL=distribfs /mnt/dfs/local   ext4    defaults,nobootwait,noatime,discard    0    2
 LABEL=tempfs    /var/tmp         ext4    defaults,nobootwait,noatime,discard    0    2
 """
 
             client.run('mkdir -p /mnt/bfs')
-            client.run('mkdir -p /mnt/dfs/local')
 
         # Create partitions on SSD
         ssds = [drive for drive, info in drives.iteritems() if info['ssd'] is True and root_partition not in info['partitions']]

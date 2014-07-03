@@ -15,11 +15,12 @@
 """
 VolumeStorageRouter module
 """
+import time
+
 from ovs.dal.dataobject import DataObject
 from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
-import time
 
 
 class VolumeStorageRouter(DataObject):
@@ -36,7 +37,7 @@ class VolumeStorageRouter(DataObject):
                   'vsrid':            (None, str, 'ID of the VSR in the Open vStorage Volume Driver.'),
                   'mountpoint':       (None, str, 'Mountpoint from which the VSR serves data'),
                   'mountpoint_temp':  (None, str, 'Mountpoint for temporary workload (scrubbing etc)'),
-                  'mountpoint_dfs':   (None, str, 'Mountpoint for the distributed filesystem (non-vdisk files)'),
+                  'mountpoint_bfs':   (None, str, 'Mountpoint for the backend filesystem (used for local and distributed fs)'),
                   'mountpoint_md':    (None, str, 'Mountpoint for metadata'),
                   'mountpoint_cache': (None, str, 'Mountpoint for caching')}
     _relations = {'vpool':            (VPool, 'vsrs'),
