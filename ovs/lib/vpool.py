@@ -19,7 +19,7 @@ VPool module
 from ovs.celery import celery
 from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.lists.vmachinelist import VMachineList
-from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
+from ovs.dal.lists.storagerouterlist import StorageRouterList
 from ovs.extensions.fs.exportfs import Nfsexports
 from ovs.extensions.hypervisor.factory import Factory
 from ovs.lib.vmachine import VMachineController
@@ -32,14 +32,14 @@ class VPoolController(object):
 
     @staticmethod
     @celery.task(name='ovs.vpool.mountpoint_available_from_voldrv')
-    def mountpoint_available_from_voldrv(mountpoint, vsrid):
+    def mountpoint_available_from_voldrv(mountpoint, storagerouter_id):
         """
         Hook for (re)exporting the NFS mountpoint
         """
-        vsr = VolumeStorageRouterList.get_by_vsrid(vsrid)
-        if vsr is None:
-            raise RuntimeError('A VSR with id {0} could not be found.'.format(vsrid))
-        if vsr.storageappliance.pmachine.hvtype == 'VMWARE':
+        storagerouter = StorageRouterList.get_by_storagerouter_id(storagerouter_id)
+        if storagerouter is None:
+            raise RuntimeError('A Storage Router with id {0} could not be found.'.format(storagerouter_id))
+        if storagerouter.storageappliance.pmachine.hvtype == 'VMWARE':
             nfs = Nfsexports()
             nfs.unexport(mountpoint)
             nfs.export(mountpoint)
@@ -51,10 +51,10 @@ class VPoolController(object):
         Syncs all vMachines of a given vPool with the hypervisor
         """
         vpool = VPool(vpool_guid)
-        for vsr in vpool.vsrs:
-            pmachine = vsr.storageappliance.pmachine
+        for storagerouter in vpool.storagerouters:
+            pmachine = storagerouter.storageappliance.pmachine
             hypervisor = Factory.get(pmachine)
-            for vm_object in hypervisor.get_vms_by_nfs_mountinfo(vsr.storage_ip, vsr.mountpoint):
+            for vm_object in hypervisor.get_vms_by_nfs_mountinfo(storagerouter.storage_ip, storagerouter.mountpoint):
                 search_vpool = None if pmachine.hvtype == 'KVM' else vpool
                 vmachine = VMachineList.get_by_devicename_and_vpool(
                     devicename=vm_object['backing']['filename'],

@@ -73,26 +73,26 @@ class StorageApplianceController(object):
         Manager.init_vpool(parameters['storageappliance_ip'], parameters['vpool_name'], parameters=parameters)
 
     @staticmethod
-    @celery.task(name='ovs.storageappliance.remove_vsr')
-    def remove_vsr(vsr_guid):
+    @celery.task(name='ovs.storageappliance.remove_storagerouter')
+    def remove_storagerouter(storagerouter_guid):
         """
-        Removes a VSR (and, if it was the last VSR for a vPool, the vPool is removed as well)
+        Removes a Storage Router (and, if it was the last Storage Router for a vPool, the vPool is removed as well)
         """
         from ovs.extensions.grid.manager import Manager
 
-        Manager.remove_vpool(vsr_guid)
+        Manager.remove_vpool(storagerouter_guid)
 
     @staticmethod
-    @celery.task(name='ovs.storageappliance.update_vsrs')
-    def update_vsrs(vsr_guids, storageappliances, parameters):
+    @celery.task(name='ovs.storageappliance.update_storagerouters')
+    def update_storagerouters(storagerouter_guids, storageappliances, parameters):
         """
         Add/remove multiple vPools
-        @param vsr_guids: VSRs to be removed
+        @param storagerouter_guids: Storage Routers to be removed
         @param storageappliances: StorageAppliances on which to add a new link
         @param parameters: Settings for new links
         """
         success = True
-        # Add VSRs
+        # Add Storage Routers
         for storageappliance_ip, storageapplaince_machineid in storageappliances:
             try:
                 new_parameters = copy.copy(parameters)
@@ -114,10 +114,10 @@ class StorageApplianceController(object):
                     result.wait()
             except:
                 success = False
-        # Remove VSRs
-        for vsr_guid in vsr_guids:
+        # Remove Storage Routers
+        for storagerouter_guid in storagerouter_guids:
             try:
-                StorageApplianceController.remove_vsr(vsr_guid)
+                StorageApplianceController.remove_storagerouter(storagerouter_guid)
             except:
                 success = False
         return success

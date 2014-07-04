@@ -13,34 +13,34 @@
 # limitations under the License.
 
 """
-VolumeStorageRouter module
+StorageRouter module
 """
 from ovs.dal.dataobject import DataObject
 from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.hybrids.storageappliance import StorageAppliance
-from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
+from ovs.extensions.storageserver.storagerouter import StorageRouterClient
 import time
 
 
-class VolumeStorageRouter(DataObject):
+class StorageRouter(DataObject):
     """
-    The VolumeStorageRouter class represents a Volume Storage Router (VSR). A VSR is an application
-    on a Storage Appliance to which the vDisks connect. The VSR is the gateway to the Storage Backend.
+    The StorageRouter class represents a Storage Router. A Storage Router is an application
+    on a Storage Appliance to which the vDisks connect. The Storage Router is the gateway to the Storage Backend.
     """
     # pylint: disable=line-too-long
-    __blueprint = {'name':             (None, str, 'Name of the VSR.'),
-                   'description':      (None, str, 'Description of the VSR.'),
-                   'port':             (None, int, 'Port on which the VSR is listening.'),
-                   'cluster_ip':       (None, str, 'IP address on which the VSR is listening.'),
+    __blueprint = {'name':             (None, str, 'Name of the Storage Router.'),
+                   'description':      (None, str, 'Description of the Storage Router.'),
+                   'port':             (None, int, 'Port on which the Storage Router is listening.'),
+                   'cluster_ip':       (None, str, 'IP address on which the Storage Router is listening.'),
                    'storage_ip':       (None, str, 'IP address on which the vpool is shared to hypervisor'),
-                   'vsrid':            (None, str, 'ID of the VSR in the Open vStorage Volume Driver.'),
-                   'mountpoint':       (None, str, 'Mountpoint from which the VSR serves data'),
+                   'storagerouter_id': (None, str, 'ID of the Storage Router as known by the Storage Router Drivers.'),
+                   'mountpoint':       (None, str, 'Mountpoint from which the Storage Router serves data'),
                    'mountpoint_temp':  (None, str, 'Mountpoint for temporary workload (scrubbing etc)'),
                    'mountpoint_bfs':   (None, str, 'Mountpoint for the backend filesystem (used for local and distributed fs)'),
                    'mountpoint_md':    (None, str, 'Mountpoint for metadata'),
                    'mountpoint_cache': (None, str, 'Mountpoint for caching')}
-    __relations = {'vpool':            (VPool, 'vsrs'),
-                   'storageappliance': (StorageAppliance, 'vsrs')}
+    __relations = {'vpool':            (VPool, 'storagerouters'),
+                   'storageappliance': (StorageAppliance, 'storagerouters')}
     __expiry = {'status':        (30, str),
                 'statistics':     (4, dict),
                 'stored_data':   (60, int)}
@@ -48,23 +48,23 @@ class VolumeStorageRouter(DataObject):
 
     def _status(self):
         """
-        Fetches the Status of the VSR.
+        Fetches the Status of the Storage Router.
         """
         _ = self
         return None
 
     def _statistics(self):
         """
-        Aggregates the Statistics (IOPS, Bandwidth, ...) of the vDisks connected to the VSR.
+        Aggregates the Statistics (IOPS, Bandwidth, ...) of the vDisks connected to the Storage Router.
         """
-        client = VolumeStorageRouterClient()
+        client = StorageRouterClient()
         vdiskstatsdict = {}
         for key in client.stat_keys:
             vdiskstatsdict[key] = 0
             vdiskstatsdict['{0}_ps'.format(key)] = 0
         if self.vpool is not None:
             for disk in self.vpool.vdisks:
-                if disk.vsrid == self.vsrid:
+                if disk.storagerouter_id == self.storagerouter_id:
                     statistics = disk._statistics()  # Prevent double caching
                     for key, value in statistics.iteritems():
                         if key != 'timestamp':
@@ -74,7 +74,7 @@ class VolumeStorageRouter(DataObject):
 
     def _stored_data(self):
         """
-        Aggregates the Stored Data in Bytes of the vDisks connected to the VSR.
+        Aggregates the Stored Data in Bytes of the vDisks connected to the Storage Router.
         """
         if self.vpool is not None:
             return sum([disk.info['stored'] for disk in self.vpool.vdisks])

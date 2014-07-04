@@ -31,7 +31,7 @@ define([
         self.port            = ko.observable();
         self.clusterIP       = ko.observable();
         self.storageIP       = ko.observable();
-        self.vsrid           = ko.observable();
+        self.storageRouterID = ko.observable();
         self.mountpoint      = ko.observable();
         self.mountpointTemp  = ko.observable();
         self.mountpointBFS   = ko.observable();
@@ -44,7 +44,7 @@ define([
             self.port(data.port);
             self.clusterIP(data.cluster_ip);
             self.storageIP(data.storage_ip);
-            self.vsrid(data.vsrid);
+            self.storageRouterID(data.storageRouterID);
             self.mountpoint(data.mountpoint);
             self.mountpointTemp(data.mountpoint_temp);
             self.mountpointBFS(data.mountpoint_bfs);
@@ -56,7 +56,7 @@ define([
         self.load = function() {
             return $.Deferred(function(deferred) {
                 self.loading(true);
-                api.get('volumestoragerouters/' + self.guid())
+                api.get('storagerouters/' + self.guid())
                     .done(function(data) {
                         self.fillData(data);
                         deferred.resolve();

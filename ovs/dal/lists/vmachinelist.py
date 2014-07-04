@@ -54,7 +54,7 @@ class VMachineList(object):
     @staticmethod
     def get_by_devicename_and_vpool(devicename, vpool):
         """
-        Returns a list of all VDisks based on a given volumeid
+        Returns a list of all vMachines based on a given devicename and vpool
         """
         vpool_guid = None if vpool is None else vpool.guid
         vms = DataList({'object': VMachine,

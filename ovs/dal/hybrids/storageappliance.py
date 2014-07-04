@@ -16,7 +16,7 @@
 StorageAppliance module
 """
 import time
-from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
+from ovs.extensions.storageserver.storagerouter import StorageRouterClient
 from ovs.dal.dataobject import DataObject
 from ovs.dal.hybrids.pmachine import PMachine
 
@@ -44,14 +44,14 @@ class StorageAppliance(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk of the vMachine.
         """
-        client = VolumeStorageRouterClient()
+        client = StorageRouterClient()
         vdiskstatsdict = {}
         for key in client.stat_keys:
             vdiskstatsdict[key] = 0
             vdiskstatsdict['{0}_ps'.format(key)] = 0
-        for vsr in self.vsrs:
-            for vdisk in vsr.vpool.vdisks:
-                if vdisk.vsrid == vsr.vsrid:
+        for storagerouter in self.storagerouters:
+            for vdisk in storagerouter.vpool.vdisks:
+                if vdisk.storagerouter_id == storagerouter.storagerouter_id:
                     statistics = vdisk._statistics()  # Prevent double caching
                     for key, value in statistics.iteritems():
                         if key != 'timestamp':
@@ -64,9 +64,9 @@ class StorageAppliance(DataObject):
         Aggregates the Stored Data of each vDisk of the vMachine.
         """
         data = 0
-        for vsr in self.vsrs:
-            for vdisk in vsr.vpool.vdisks:
-                if vdisk.vsrid == vsr.vsrid:
+        for storagerouter in self.storagerouter_s:
+            for vdisk in storagerouter.vpool.vdisks:
+                if vdisk.storagerouter_id == storagerouter.storagerouter_id:
                     data += vdisk.info['stored']
         return data
 
@@ -76,11 +76,11 @@ class StorageAppliance(DataObject):
         """
         status = 'UNKNOWN'
         status_code = 0
-        for vsr in self.vsrs:
-            for vdisk in vsr.vpool.vdisks:
-                if vdisk.vsrid == vsr.vsrid:
+        for storagerouter in self.storagerouters:
+            for vdisk in storagerouter.vpool.vdisks:
+                if vdisk.storagerouter_id == storagerouter.storagerouter_id:
                     mode = vdisk.info['failover_mode']
-                    current_status_code = VolumeStorageRouterClient.FOC_STATUS[mode.lower()]
+                    current_status_code = StorageRouterClient.FOC_STATUS[mode.lower()]
                     if current_status_code > status_code:
                         status = mode
                         status_code = current_status_code
@@ -92,9 +92,9 @@ class StorageAppliance(DataObject):
         Definition of "served by": vMachine whose disks are served by a given StorageAppliance
         """
         vmachine_guids = set()
-        for vsr in self.vsrs:
-            for vdisk in vsr.vpool.vdisks:
-                if vdisk.vsrid == vsr.vsrid:
+        for storagerouter in self.storagerouters:
+            for vdisk in storagerouter.vpool.vdisks:
+                if vdisk.storagerouter_id == storagerouter.storagerouter_id:
                     if vdisk.vmachine_guid is not None:
                         vmachine_guids.add(vdisk.vmachine_guid)
         return list(vmachine_guids)
@@ -104,17 +104,17 @@ class StorageAppliance(DataObject):
         Gets the vDisk guids served by this StorageAppliance.
         """
         vdisk_guids = []
-        for vsr in self.vsrs:
-            for vdisk in vsr.vpool.vdisks:
-                if vdisk.vsrid == vsr.vsrid:
+        for storagerouter in self.storagerouters:
+            for vdisk in storagerouter.vpool.vdisks:
+                if vdisk.storagerouter_id == storagerouter.storagerouter_id:
                     vdisk_guids.append(vdisk.guid)
         return vdisk_guids
 
     def _vpools_guids(self):
         """
-        Gets the vPool guids linked to this StorageAppliance (trough VolumeStorageRouter)
+        Gets the vPool guids linked to this StorageAppliance (trough StorageRouter)
         """
         vpool_guids = set()
-        for vsr in self.vsrs:
-            vpool_guids.add(vsr.vpool_guid)
+        for storagerouter in self.storagerouters:
+            vpool_guids.add(storagerouter.vpool_guid)
         return list(vpool_guids)

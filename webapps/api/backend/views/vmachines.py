@@ -247,10 +247,10 @@ class VMachineViewSet(viewsets.ViewSet):
         pmachines = {}
         for vpool in vpools:
             this_pmachine_guids = set()
-            for vsr in vpool.vsrs:
-                this_pmachine_guids.add(vsr.storageappliance.pmachine_guid)
+            for storagerouter in vpool.storagerouters:
+                this_pmachine_guids.add(storagerouter.storageappliance.pmachine_guid)
                 if hints['full'] is True:
-                    pmachines[vsr.storageappliance.pmachine_guid] = vsr.storageappliance.pmachine
+                    pmachines[storagerouter.storageappliance.pmachine_guid] = storagerouter.storageappliance.pmachine
             if pmachine_guids is None:
                 pmachine_guids = list(this_pmachine_guids)
             else:

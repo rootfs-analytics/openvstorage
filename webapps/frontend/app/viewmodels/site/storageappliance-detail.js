@@ -15,22 +15,22 @@
 define([
     'jquery', 'knockout',
     'ovs/shared', 'ovs/generic', 'ovs/refresher', 'ovs/api',
-    '../containers/storageappliance', '../containers/pmachine', '../containers/vpool', '../containers/volumestoragerouter'
-], function($, ko, shared, generic, Refresher, api, StorageAppliance, PMachine, VPool, VolumeStorageRouter) {
+    '../containers/storageappliance', '../containers/pmachine', '../containers/vpool', '../containers/storagerouter'
+], function($, ko, shared, generic, Refresher, api, StorageAppliance, PMachine, VPool, StorageRouter) {
     "use strict";
     return function() {
         var self = this;
 
         // Variables
-        self.shared           = shared;
-        self.guard            = { authenticated: true };
-        self.refresher        = new Refresher();
-        self.widgets          = [];
-        self.pMachineCache    = {};
-        self.vPoolCache       = {};
-        self.vMachineCache    = {};
-        self.loadVPoolsHandle = undefined;
-        self.loadVSRsHandle   = {};
+        self.shared                   = shared;
+        self.guard                    = { authenticated: true };
+        self.refresher                = new Refresher();
+        self.widgets                  = [];
+        self.pMachineCache            = {};
+        self.vPoolCache               = {};
+        self.vMachineCache            = {};
+        self.loadVPoolsHandle         = undefined;
+        self.loadStorageRoutersHandle = {};
 
         // Observables
         self.storageAppliance     = ko.observable();
@@ -46,7 +46,7 @@ define([
                         storageAppliance.load('_dynamics,_relations'),
                         storageAppliance.getAvailableActions()
                     ])
-                    .then(self.loadVSRs)
+                    .then(self.loadStorageRouters)
                     .then(self.loadVPools)
                     .done(function() {
                         self.checkedVPoolGuids(self.storageAppliance().vPoolGuids);
@@ -96,25 +96,25 @@ define([
                 }
             }).promise();
         };
-        self.loadVSRs = function() {
+        self.loadStorageRouters = function() {
             return $.Deferred(function(deferred) {
-                $.each(self.storageAppliance().vSRGuids, function(index, guid) {
-                    if (generic.xhrCompleted(self.loadVSRsHandle[guid])) {
-                        self.loadVSRsHandle[guid] = api.get('volumestoragerouters/' + guid)
+                $.each(self.storageAppliance().storageRouterGuids, function(index, guid) {
+                    if (generic.xhrCompleted(self.loadStorageRoutersHandle[guid])) {
+                        self.loadStorageRoutersHandle[guid] = api.get('storagerouters/' + guid)
                             .done(function(data) {
-                                var vsrFound = false, vsr;
-                                $.each(self.storageAppliance().VSRs(), function(vindex, vsr) {
-                                    if (vsr.guid() === guid) {
-                                        vsr.fillData(data);
-                                        vsrFound = true;
+                                var storageRouterFound = false, storageRouter;
+                                $.each(self.storageAppliance().StorageRouters(), function(vindex, storageRouter) {
+                                    if (storageRouter.guid() === guid) {
+                                        storageRouter.fillData(data);
+                                        storageRouterFound = true;
                                         return false;
                                     }
                                     return true;
                                 });
-                                if (vsrFound === false) {
-                                    vsr = new VolumeStorageRouter(data.guid);
-                                    vsr.fillData(data);
-                                    self.storageAppliance().VSRs.push(vsr);
+                                if (storageRouterFound === false) {
+                                    storageRouter = new StorageRouter(data.guid);
+                                    storageRouter.fillData(data);
+                                    self.storageAppliance().StorageRouters.push(storageRouter);
                                 }
                             });
                     }
@@ -126,7 +126,7 @@ define([
         // Durandal
         self.activate = function(mode, guid) {
             self.storageAppliance(new StorageAppliance(guid));
-            self.storageAppliance().VSRs = ko.observableArray();
+            self.storageAppliance().StorageRouters = ko.observableArray();
 
             self.refresher.init(self.load, 5000);
             self.refresher.run();

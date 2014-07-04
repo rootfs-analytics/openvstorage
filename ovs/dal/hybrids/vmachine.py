@@ -20,7 +20,7 @@ from ovs.dal.datalist import DataList
 from ovs.dal.dataobjectlist import DataObjectList
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.vpool import VPool
-from ovs.extensions.storageserver.volumestoragerouter import VolumeStorageRouterClient
+from ovs.extensions.storageserver.storagerouter import StorageRouterClient
 from ovs.extensions.hypervisor.factory import Factory as hvFactory
 import time
 
@@ -92,7 +92,7 @@ class VMachine(DataObject):
         """
         Aggregates the Statistics (IOPS, Bandwidth, ...) of each vDisk of the vMachine.
         """
-        client = VolumeStorageRouterClient()
+        client = StorageRouterClient()
         vdiskstatsdict = {}
         for key in client.stat_keys:
             vdiskstatsdict[key] = 0
@@ -119,7 +119,7 @@ class VMachine(DataObject):
         status_code = 0
         for vdisk in self.vdisks:
             mode = vdisk.info['failover_mode']
-            current_status_code = VolumeStorageRouterClient.FOC_STATUS[mode.lower()]
+            current_status_code = StorageRouterClient.FOC_STATUS[mode.lower()]
             if current_status_code > status_code:
                 status = mode
                 status_code = current_status_code
@@ -130,14 +130,14 @@ class VMachine(DataObject):
         Gets the StorageAppliance guids linked to this vMachine
         """
         storageappliance_guids = set()
-        from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
-        vsr_ids = [vdisk.vsrid for vdisk in self.vdisks if vdisk.vsrid is not None]
-        volumestoragerouters = DataList({'object': VolumeStorageRouter,
+        from ovs.dal.hybrids.storagerouter import StorageRouter
+        storagerouter_ids = [vdisk.storagerouter_id for vdisk in self.vdisks if vdisk.storagerouter_id is not None]
+        storagerouters = DataList({'object': StorageRouter,
                                          'data': DataList.select.DESCRIPTOR,
                                          'query': {'type': DataList.where_operator.AND,
-                                                   'items': [('vsrid', DataList.operator.IN, vsr_ids)]}}).data  # noqa
-        for vsr in DataObjectList(volumestoragerouters, VolumeStorageRouter):
-            storageappliance_guids.add(vsr.storageappliance_guid)
+                                                   'items': [('storagerouter_id', DataList.operator.IN, storagerouter_ids)]}}).data  # noqa
+        for storagerouter in DataObjectList(storagerouters, StorageRouter):
+            storageappliance_guids.add(storagerouter.storageappliance_guid)
         return list(storageappliance_guids)
 
     def _vpools_guids(self):

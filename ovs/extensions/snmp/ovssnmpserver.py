@@ -182,7 +182,7 @@ class OVSSNMPServer():
             from ovs.dal.lists.pmachinelist import PMachineList
             from ovs.dal.lists.vmachinelist import VMachineList
             from ovs.dal.lists.vpoollist import VPoolList
-            from ovs.dal.lists.volumestoragerouterlist import VolumeStorageRouterList
+            from ovs.dal.lists.storagerouterlist import StorageRouterList
 
             for storageappliance in StorageApplianceList.get_storageappliances():
                 _guids.add(storageappliance.guid)
@@ -197,13 +197,13 @@ class OVSSNMPServer():
                 self._register_dal_model(10, storageappliance, 'machineid', "9")
                 self._register_dal_model(10, storageappliance, 'status', "10")
                 self._register_dal_model(10, storageappliance, '#vdisks', "11",
-                                         func = lambda storageappliance: len([vdisk for vpool_vdisks in [vsr.vpool.vdisks for vsr in storageappliance.vsrs] for vdisk in vpool_vdisks if vdisk.vsrid == vsr.vsrid]),
+                                         func = lambda storageappliance: len([vdisk for vpool_vdisks in [storagerouter.vpool.vdisks for storagerouter in storageappliance.storagerouters] for vdisk in vpool_vdisks if vdisk.storagerouter_id == storagerouter.storagerouter_id]),
                                          atype = int)
                 self._register_dal_model(10, storageappliance, '#vmachines', "12",
-                                         func = lambda storageappliance: len(set([vdisk.vmachine.guid for vpool_vdisks in [vsr.vpool.vdisks for vsr in storageappliance.vsrs] for vdisk in vpool_vdisks if vdisk.vsrid == vsr.vsrid])),
+                                         func = lambda storageappliance: len(set([vdisk.vmachine.guid for vpool_vdisks in [storagerouter.vpool.vdisks for storagerouter in storageappliance.storagerouters] for vdisk in vpool_vdisks if vdisk.storagerouter_id == storagerouter.storagerouter_id])),
                                          atype = int)
                 self._register_dal_model(10, storageappliance, '#stored_data', "13",
-                                         func = lambda storageappliance: sum([vdisk.vmachine.stored_data for vpool_vdisks in [vsr.vpool.vdisks for vsr in storageappliance.vsrs] for vdisk in vpool_vdisks if vdisk.vsrid == vsr.vsrid]),
+                                         func = lambda storageappliance: sum([vdisk.vmachine.stored_data for vpool_vdisks in [storagerouter.vpool.vdisks for storagerouter in storageappliance.storagerouters] for vdisk in vpool_vdisks if vdisk.storagerouter_id == storagerouter.storagerouter_id]),
                                          atype = int)
                 self.instance_oid += 1
 
@@ -380,12 +380,12 @@ class OVSSNMPServer():
                                          atype = int)
                 self.instance_oid += 1
 
-            for vsr in VolumeStorageRouterList.get_volumestoragerouters():
-                _guids.add(vsr.guid)
+            for storagerouter in StorageRouterList.get_storagerouters():
+                _guids.add(storagerouter.guid)
 
-                self._register_dal_model(4, vsr, 'guid', "0")
-                self._register_dal_model(4, vsr, 'name', "1")
-                self._register_dal_model(4, vsr, 'stored_data', "2", atype = int)
+                self._register_dal_model(4, storagerouter, 'guid', "0")
+                self._register_dal_model(4, storagerouter, 'name', "1")
+                self._register_dal_model(4, storagerouter, 'stored_data', "2", atype = int)
                 self.instance_oid += 1
 
             reload = False

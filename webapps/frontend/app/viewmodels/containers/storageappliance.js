@@ -22,10 +22,10 @@ define([
         var self = this;
 
         // Variables
-        self.shared        = shared;
-        self.vPoolGuids    = [];
-        self.vMachineGuids = [];
-        self.vSRGuids      = [];
+        self.shared             = shared;
+        self.vPoolGuids         = [];
+        self.vMachineGuids      = [];
+        self.storageRouterGuids = [];
 
         // Handles
         self.loadHandle  = undefined;
@@ -104,8 +104,8 @@ define([
             if (data.hasOwnProperty('vpools_guids')) {
                 self.vPoolGuids = data.vpools_guids;
             }
-            if (data.hasOwnProperty('vsrs_guids')) {
-                self.vSRGuids = data.vsrs_guids;
+            if (data.hasOwnProperty('storagerouters_guids')) {
+                self.storageRouterGuids = data.storagerouters_guids;
             }
             if (data.hasOwnProperty('vmachine_guids')) {
                 self.vMachineGuids = data.vmachine_guids;

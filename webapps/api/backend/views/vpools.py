@@ -24,7 +24,7 @@ from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.hybrids.storageappliance import StorageAppliance
 from ovs.lib.vpool import VPoolController
 from ovs.lib.storageappliance import StorageApplianceController
-from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
+from ovs.dal.hybrids.storagerouter import StorageRouter
 from backend.decorators import required_roles, expose, validate, get_list, get_object, celery_task
 
 
@@ -81,10 +81,10 @@ class VPoolViewSet(viewsets.ViewSet):
         _ = request
         storageappliance_guids = []
         storageappliance = []
-        for vsr in obj.vsrs:
-            storageappliance_guids.append(vsr.storageappliance_guid)
+        for storagerouter in obj.storagerouters:
+            storageappliance_guids.append(storagerouter.storageappliance_guid)
             if hints['full'] is True:
-                storageappliance.append(vsr.storageappliance)
+                storageappliance.append(storagerouter.storageappliance)
         return storageappliance if hints['full'] is True else storageappliance_guids
 
     @action()
@@ -92,9 +92,9 @@ class VPoolViewSet(viewsets.ViewSet):
     @required_roles(['view', 'create'])
     @validate(VPool)
     @celery_task()
-    def update_vsrs(self, request, obj):
+    def update_storagerouters(self, request, obj):
         """
-        Update VSRs for a given vPool (both adding and removing VSRs)
+        Update Storage Routers for a given vPool (both adding and removing Storage Routers)
         """
         storageappliances = []
         if 'storageappliance_guids' in request.DATA:
@@ -102,18 +102,18 @@ class VPoolViewSet(viewsets.ViewSet):
                 for storageappliance_guid in request.DATA['storageappliance_guids'].strip().split(','):
                     storageappliance = StorageAppliance(storageappliance_guid)
                     storageappliances.append((storageappliance.ip, storageappliance.machineid))
-        if 'vsr_guid' not in request.DATA:
-            raise NotAcceptable('No VSR guid passed')
-        vsr_guids = []
-        if 'vsr_guids' in request.DATA:
-            if request.DATA['vsr_guids'].strip() != '':
-                for vsr_guid in request.DATA['vsr_guids'].strip().split(','):
-                    vsr = VolumeStorageRouter(vsr_guid)
-                    if vsr.vpool_guid != obj.guid:
-                        raise NotAcceptable('Given VSR does not belong to this vPool')
-                    vsr_guids.append(vsr.guid)
+        if 'storagerouter_guid' not in request.DATA:
+            raise NotAcceptable('No Storage Router guid passed')
+        storagerouter_guids = []
+        if 'storagerouter_guids' in request.DATA:
+            if request.DATA['storagerouter_guids'].strip() != '':
+                for storagerouter_guid in request.DATA['storagerouter_guids'].strip().split(','):
+                    storagerouter = StorageRouter(storagerouter_guid)
+                    if storagerouter.vpool_guid != obj.guid:
+                        raise NotAcceptable('Given Storage Router does not belong to this vPool')
+                    storagerouter_guids.append(storagerouter.guid)
 
-        vsr = VolumeStorageRouter(request.DATA['vsr_guid'])
+        storagerouter = StorageRouter(request.DATA['storagerouter_guid'])
         parameters = {'vpool_name':          obj.name,
                       'backend_type':        obj.backend_type,
                       'connection_host':     None if obj.backend_connection is None else obj.backend_connection.split(':')[0],
@@ -121,14 +121,14 @@ class VPoolViewSet(viewsets.ViewSet):
                       'connection_timeout':  0,  # Not in use anyway
                       'connection_username': obj.backend_login,
                       'connection_password': obj.backend_password,
-                      'mountpoint_bfs':      vsr.mountpoint_bfs,
-                      'mountpoint_temp':     vsr.mountpoint_temp,
-                      'mountpoint_md':       vsr.mountpoint_md,
-                      'mountpoint_cache':    vsr.mountpoint_cache,
-                      'storage_ip':          vsr.storage_ip,
-                      'vrouter_port':        vsr.port}
+                      'mountpoint_bfs':      storagerouter.mountpoint_bfs,
+                      'mountpoint_temp':     storagerouter.mountpoint_temp,
+                      'mountpoint_md':       storagerouter.mountpoint_md,
+                      'mountpoint_cache':    storagerouter.mountpoint_cache,
+                      'storage_ip':          storagerouter.storage_ip,
+                      'vrouter_port':        storagerouter.port}
         for field in parameters:
             if not parameters[field] is int:
                 parameters[field] = str(parameters[field])
 
-        return StorageApplianceController.update_vsrs.delay(vsr_guids, storageappliances, parameters)
+        return StorageApplianceController.update_storagerouters.delay(storagerouter_guids, storageappliances, parameters)
