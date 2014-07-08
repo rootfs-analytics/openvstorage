@@ -1095,7 +1095,7 @@ Service.start_service('{0}')
         """
         from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
         from ovs.dal.lists.vmachinelist import VMachineList
-        from volumedriver.storagerouter.storagerouterclient import ClusterRegistry, ArakoonNodeConfig, ClusterNodeConfig
+        from volumedriver.storagerouter.storagerouterclient import LocalStorageRouterClient, ClusterRegistry, ArakoonNodeConfig, ClusterNodeConfig
         from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagement
 
         # Get objects & Make some checks
@@ -1152,24 +1152,29 @@ from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
     Service.remove_service(domain='openvstorage', name='{0}')
 """.format(service))
+        configuration_dir = Manager._read_remote_config(client, 'ovs.core.cfgdir')
 
+        voldrv_arakoon_cluster_id = str(Manager._read_remote_config(client, 'volumedriver.arakoon.clusterid'))
+        voldrv_arakoon_cluster = ArakoonManagement().getCluster(voldrv_arakoon_cluster_id)
+        voldrv_arakoon_client_config = voldrv_arakoon_cluster.getClientConfig()
+        arakoon_node_configs = []
+        for arakoon_node in voldrv_arakoon_client_config.keys():
+            arakoon_node_configs.append(ArakoonNodeConfig(arakoon_node,
+                                                          voldrv_arakoon_client_config[arakoon_node][0][0],
+                                                          voldrv_arakoon_client_config[arakoon_node][1]))
+        vrouter_clusterregistry = ClusterRegistry(str(vpool.name), voldrv_arakoon_cluster_id, arakoon_node_configs)
         # Reconfigure volumedriver
         if vsrs_left:
-            voldrv_arakoon_cluster_id = str(Manager._read_remote_config(client, 'volumedriver.arakoon.clusterid'))
-            voldrv_arakoon_cluster = ArakoonManagement().getCluster(voldrv_arakoon_cluster_id)
-            voldrv_arakoon_client_config = voldrv_arakoon_cluster.getClientConfig()
-            arakoon_node_configs = []
-            for arakoon_node in voldrv_arakoon_client_config.keys():
-                arakoon_node_configs.append(ArakoonNodeConfig(arakoon_node,
-                                                              voldrv_arakoon_client_config[arakoon_node][0][0],
-                                                              voldrv_arakoon_client_config[arakoon_node][1]))
-            vrouter_clusterregistry = ClusterRegistry(str(vpool.name), voldrv_arakoon_cluster_id, arakoon_node_configs)
             node_configs = []
             for current_vsr in vpool.vsrs:
                 if current_vsr.guid != vsr_guid:
                     node_configs.append(ClusterNodeConfig(str(current_vsr.vsrid), str(current_vsr.cluster_ip),
                                                           current_vsr.port - 1, current_vsr.port, current_vsr.port + 1))
             vrouter_clusterregistry.set_node_configs(node_configs)
+        else:
+            storagedriver_client = LocalStorageRouterClient('{0}/voldrv_vpools/{1}.json'.format(configuration_dir, vpool.name))
+            storagedriver_client.destroy_filesystem()
+            vrouter_clusterregistry.erase_node_configs()
 
         # Remove directories
         client = Client.load(ip)
@@ -1177,14 +1182,10 @@ if Service.has_service('{0}'):
         client.run('rm -rf {}/foc_{}'.format(vsr.mountpoint_cache, vpool.name))
         client.run('rm -rf {}/metadata_{}'.format(vsr.mountpoint_md, vpool.name))
         client.run('rm -rf {}/tlogs_{}'.format(vsr.mountpoint_md, vpool.name))
-        client.run('rm -rf {}/tlogs_{}'.format(vsr.mountpoint_md, vpool.name))
         client.run('rmdir {}'.format(vsr.mountpoint))
 
-
         # Remove files
-        client = Client.load(ip)
         client.run('rm -f {}/read_{}'.format(vsr.mountpoint_cache, vpool.name))
-        configuration_dir = Manager._read_remote_config(client, 'ovs.core.cfgdir')
         client.run('rm -f {0}/voldrv_vpools/{1}.json'.format(configuration_dir, vpool.name))
 
         # First model cleanup

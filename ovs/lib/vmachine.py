@@ -25,6 +25,7 @@ from ovs.celery import celery
 from ovs.dal.hybrids.pmachine import PMachine
 from ovs.dal.hybrids.vmachine import VMachine
 from ovs.dal.hybrids.vdisk import VDisk
+from ovs.dal.hybrids.volumestoragerouter import VolumeStorageRouter
 from ovs.dal.lists.vmachinelist import VMachineList
 from ovs.dal.lists.pmachinelist import PMachineList
 from ovs.dal.lists.vdisklist import VDiskList
@@ -690,7 +691,10 @@ class VMachineController(object):
         # Remove VSRs
         for vsr_guid in vsr_guids:
             try:
-                VMachineController.remove_vsr(vsr_guid)
+                vsr = VolumeStorageRouter(vsr_guid)
+                VMachineController.remove_vsr.s(vsr_guid).apply_async(
+                    routing_key='vsa.{0}'.format(vsr.serving_vmachine.machineid)
+                )
             except:
                 success = False
         return success
