@@ -56,7 +56,7 @@ define([
         // Functions
         self.finish = function() {
             return $.Deferred(function(deferred) {
-                api.post('users/' + self.shared.authentication.token + '/set_password', {
+                api.post('users/' + self.shared.authentication.userGuid() + '/set_password', {
                         current_password: self.currentPassword(),
                         new_password: self.newPassword()
                     })

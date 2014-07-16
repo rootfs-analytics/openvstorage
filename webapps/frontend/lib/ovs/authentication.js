@@ -25,6 +25,7 @@ define([
         self.token       = undefined;
         self.required    = false;
 
+        self.userGuid = ko.observable();
         self.username = ko.observable();
         self.password = ko.observable();
         self.loggedIn = ko.observable(false);
@@ -34,21 +35,23 @@ define([
                 var callData, cookie;
                 callData = {
                     type: 'post',
-                    data: ko.toJSON({
-                        'username': username,
-                        'password': password
-                    }),
-                    contentType: 'application/json',
+                    data: {
+                        grant_type: 'password',
+                        username: username,
+                        password: password
+                    },
+                    contentType: 'application/x-www-form-urlencoded',
                     headers: {}
                 };
                 cookie = generic.getCookie('csrftoken');
                 if (cookie !== undefined) {
                     callData.headers['X-CSRFToken'] = cookie;
                 }
-                $.ajax('/api/auth/', callData)
+                $.ajax('/api/oauth2/token/', callData)
                     .done(function(result) {
                         var i, events = [];
-                        self.token = result.token;
+                        self.token = result.access_token;
+                        self.userGuid(result.user_guid);
                         self.username(username);
                         self.password(password);
                         self.loggedIn(true);
@@ -65,6 +68,7 @@ define([
                             self.token = undefined;
                             self.username(undefined);
                             self.password(undefined);
+                            self.userGuid(undefined);
                             self.loggedIn(false);
                             deferred.reject({
                                 status: xmlHttpRequest.status,
@@ -83,6 +87,7 @@ define([
             self.token = undefined;
             self.username(undefined);
             self.password(undefined);
+            self.userGuid(undefined);
             self.loggedIn(false);
             for (i = 0; i < self.onLoggedOut.length; i += 1) {
                 events.push(self.onLoggedOut[i]());
@@ -96,7 +101,7 @@ define([
             return self.token !== undefined;
         };
         self.header = function() {
-            return 'Token ' + self.token;
+            return 'Bearer ' + self.token;
         };
     };
 });

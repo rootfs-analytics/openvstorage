@@ -60,7 +60,7 @@ define([
 
             self.shared.authentication.onLoggedIn.push(self.shared.messaging.start);
             self.shared.authentication.onLoggedIn.push(function() {
-                return api.get('users/' + self.shared.authentication.token)
+                return api.get('users/' + self.shared.authentication.userGuid())
                     .then(function(data) {
                         self.shared.language = data.language;
                     })
