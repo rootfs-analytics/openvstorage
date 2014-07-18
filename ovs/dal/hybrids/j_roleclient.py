@@ -13,22 +13,20 @@
 # limitations under the License.
 
 """
-User module
+RoleClient module
 """
 from ovs.dal.dataobject import DataObject
-from ovs.dal.hybrids.group import Group
+from ovs.dal.hybrids.role import Role
+from ovs.dal.hybrids.client import Client
 
 
-class User(DataObject):
+class RoleClient(DataObject):
     """
-    The User class represents a User.  A user is an individual who can perform actions
-    on objects in Open vStorage.
+    The RoleClient class represents the junction table between Role and Client.
     """
     # pylint: disable=line-too-long
-    __blueprint = {'username':  (None,    str,  'Username of the User.'),
-                   'password':  (None,    str,  'Password of the User.'),
-                   'is_active': (False,   bool, 'Indicates whether the User is active.'),
-                   'language':  ('en-US', ['en-US', 'nl-NL'], 'Language of the User.')}
-    __relations = {'group': (Group, 'users')}
+    __blueprint = {}
+    __relations = {'role':  (Role,  'clients'),
+                   'client': (Client, 'roles')}
     __expiry = {}
     # pylint: enable=line-too-long

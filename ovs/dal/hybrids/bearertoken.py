@@ -13,22 +13,20 @@
 # limitations under the License.
 
 """
-User module
+Bearer Token module
 """
 from ovs.dal.dataobject import DataObject
-from ovs.dal.hybrids.group import Group
+from ovs.dal.hybrids.client import Client
 
 
-class User(DataObject):
+class BearerToken(DataObject):
     """
-    The User class represents a User.  A user is an individual who can perform actions
-    on objects in Open vStorage.
+    The Bearer Token class represents the Bearer tokens used by the API by means of OAuth 2.0
     """
     # pylint: disable=line-too-long
-    __blueprint = {'username':  (None,    str,  'Username of the User.'),
-                   'password':  (None,    str,  'Password of the User.'),
-                   'is_active': (False,   bool, 'Indicates whether the User is active.'),
-                   'language':  ('en-US', ['en-US', 'nl-NL'], 'Language of the User.')}
-    __relations = {'group': (Group, 'users')}
+    __blueprint = {'access_token':  (None, str, 'Access token'),
+                   'refresh_token': (None, str, 'Refresh token'),
+                   'expiration':    (None, int, 'Expiration timestamp')}
+    __relations = {'client': (Client, 'tokens')}
     __expiry = {}
     # pylint: enable=line-too-long
