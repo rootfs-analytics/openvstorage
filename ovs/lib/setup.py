@@ -1251,7 +1251,7 @@ for config_file in os.listdir('/opt/OpenvStorage/config/voldrv_vpools'):
         if 'stop/waiting' in output: pass
         if 'start/running' in output:
             pid = output.split('process ')[1].strip()
-            ovs_rabbitmq_running = False
+            ovs_rabbitmq_running = True
         same_process = rabbitmq_pid == pid
         if check_ovs:
             return rabbitmq_running, rabbitmq_pid, ovs_rabbitmq_running, same_process
