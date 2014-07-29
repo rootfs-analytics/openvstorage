@@ -148,7 +148,7 @@ class VDiskController(object):
         _snap = '{}'.format(snapshotid)
         logger.info(_log.format(_snap, disk.name, _location))
         volume_id = disk.storagedriver_client.create_clone(_location, _id, _snap)
-        new_disk.copy_blueprint(disk, include=properties_to_clone)
+        new_disk.copy(disk, include=properties_to_clone)
         new_disk.parent_vdisk = disk
         new_disk.name = '{}-clone'.format(disk.name)
         new_disk.description = description
@@ -247,10 +247,11 @@ class VDiskController(object):
         description = '{} {}'.format(machinename, devicename)
         properties_to_clone = [
             'description', 'size', 'type', 'retentionpolicyid',
-            'snapshotpolicyid', 'has_autobackup', 'vmachine', 'vpool']
+            'snapshotpolicyid', 'vmachine', 'vpool']
 
         disk = VDisk(diskguid)
-        if not disk.vmachine.is_vtemplate:
+        if disk.vmachine and not disk.vmachine.is_vtemplate:
+            # Disk might not be attached to a vmachine, but still be a template
             raise RuntimeError('The given disk does not belong to a template')
 
         if storagedriver_guid is not None:
@@ -259,7 +260,7 @@ class VDiskController(object):
             storagedriver_id = disk.storagedriver_id
 
         new_disk = VDisk()
-        new_disk.copy_blueprint(disk, include=properties_to_clone)
+        new_disk.copy(disk, include=properties_to_clone)
         new_disk.vpool = disk.vpool
         new_disk.devicename = hypervisor.clean_backing_disk_filename(disk_path)
         new_disk.parent_vdisk = disk
@@ -318,3 +319,21 @@ class VDiskController(object):
             return
         client = SSHClient.load('127.0.0.1')
         client.run_local('rm -f %s' % (location), sudo=True, shell=True)
+
+    @staticmethod
+    @celery.task(name='ovs.disk.extend_volume')
+    def extend_volume(location, size):
+        """
+        Extend a volume using filesystem calls
+        Calls "truncate" to create sparse raw file
+        TODO: use volumedriver API
+        TODO: model VDisk() and return guid
+
+        @param location: location, filename
+        @param size: size of volume, GB
+        @return None
+        """
+        if not os.path.exists(location):
+            raise RuntimeError('Volume not found at %s, use create_volume first.' % location)
+        client = SSHClient.load('127.0.0.1')
+        client.run_local('truncate -s %sG %s' % (size, location), sudo=True, shell=True)
