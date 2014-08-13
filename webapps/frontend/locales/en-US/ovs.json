@@ -54,7 +54,8 @@
             "DISTRIBUTED": "Distributed FS"
         },
         "mgmtcentertypes": {
-            "VCENTER": "VMware vCenter"
+            "VCENTER": "VMware vCenter",
+            "OPENSTACK": "OpenStack Controller Node"
         },
         "granttypes": {
             "PASSWORD": "Password Credentials",
