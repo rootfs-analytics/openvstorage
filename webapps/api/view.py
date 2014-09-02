@@ -24,6 +24,7 @@ from django.conf import settings
 from oauth2.decorators import json_response
 from ovs.dal.lists.bearertokenlist import BearerTokenList
 from ovs.dal.lists.storagerouterlist import StorageRouterList
+from ovs.dal.lists.backendtypelist import BackendTypeList
 
 
 class MetadataView(View):
@@ -43,14 +44,15 @@ class MetadataView(View):
                 'userguid': None,
                 'roles': [],
                 'storagerouter_ips': [sr.ip for sr in StorageRouterList.get_storagerouters()],
-                'versions': list(settings.VERSION)}
+                'versions': list(settings.VERSION),
+                'plugins': {}}
         try:
+            # Gather authorization metadata
             if 'HTTP_AUTHORIZATION' not in request.META:
                 return HttpResponse, dict(data.items() + {'authentication_state': 'unauthenticated'}.items())
             authorization_type, access_token = request.META['HTTP_AUTHORIZATION'].split(' ')
             if authorization_type != 'Bearer':
                 return HttpResponse, dict(data.items() + {'authentication_state': 'invalid authorization type'}.items())
-
             tokens = BearerTokenList.get_by_access_token(access_token)
             if len(tokens) != 1:
                 return HttpResponse, dict(data.items() + {'authentication_state': 'invalid token'}.items())
@@ -61,14 +63,25 @@ class MetadataView(View):
                 token.delete()
                 return HttpResponse, dict(data.items() + {'authentication_state': 'token expired'}.items())
 
+            # Gather user metadata
             user = token.client.user
             if not user.is_active:
                 return HttpResponse, dict(data.items() + {'authentication_state': 'inactive user'}.items())
+            roles = [j.role.code for j in token.roles]
+
+            # Gather plugin metadata
+            plugins = {}
+            # - Backends. BackendType plugins must set the has_gui flag on True
+            backend_types = [backend_types.code for backend_types in BackendTypeList.get_backend_types() if backend_types.has_gui is True]
+            if backend_types:
+                plugins['backend_types'] = backend_types
 
             return HttpResponse, dict(data.items() + {'authenticated': True,
+                                                      'authentication_state': 'authenticated',
                                                       'username': user.username,
                                                       'userguid': user.guid,
-                                                      'roles': [j.role.code for j in token.roles]}.items())
+                                                      'roles': roles,
+                                                      'plugins': plugins}.items())
         except:
             return HttpResponse, dict(data.items() + {'authentication_state': 'unexpected exception'}.items())
 

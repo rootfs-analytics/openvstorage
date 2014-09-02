@@ -60,14 +60,12 @@ define([
 
             self.shared.authentication.onLoggedIn.push(self.shared.messaging.start);
             self.shared.authentication.onLoggedIn.push(function() {
-                $.ajax('/api/?timestamp=' + generic.getTimestamp(), {
-                    type: 'get',
-                    contentType: 'application/json',
-                    headers: { Authorization: self.shared.authentication.header() }
-                })
+                api.get('')
                     .then(function(metadata) {
                         self.shared.user.username(undefined);
                         self.shared.user.guid(undefined);
+                        self.shared.user.roles([]);
+                        self.shared.plugins({});
                         if (!metadata.authenticated) {
                             window.localStorage.removeItem('accesstoken');
                             self.shared.authentication.accessToken(undefined);
@@ -77,6 +75,29 @@ define([
                         self.shared.user.username(metadata.username);
                         self.shared.user.guid(metadata.userguid);
                         self.shared.user.roles(metadata.roles);
+                        self.shared.plugins(metadata.plugins);
+                        $.each(metadata.plugins, function(pluginType, entries) {
+                            if (pluginType === 'backends') {
+                                routing.siteRoutes.push({
+                                    route: 'backends',
+                                    moduleId: 'backends',
+                                    title: $.t('ovs:backends.title'),
+                                    titlecode: 'ovs:backends.title',
+                                    nav: true,
+                                    main: true
+                                });
+                                $.each(entries, function(i, backendEntry) {
+                                    routing.siteRoutes.push({
+                                        route: 'backend-' + backendEntry + '/:guid',
+                                        moduleId: 'backends/' + backendEntry + '-detail',
+                                        title: $.t(backendEntry + ':detail.title'),
+                                        titlecode: backendEntry + ':detail.title',
+                                        nav: false,
+                                        main: false
+                                    });
+                                });
+                            }
+                        });
                     })
                     .then(function() {
                         return api.get('users/' + self.shared.user.guid());

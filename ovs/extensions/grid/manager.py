@@ -736,6 +736,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
         from ovs.dal.lists.vpoollist import VPoolList
         from ovs.dal.lists.storagedriverlist import StorageDriverList
         from ovs.dal.lists.storagerouterlist import StorageRouterList
+        from ovs.dal.lists.backendtypelist import BackendTypeList
         from volumedriver.storagerouter.storagerouterclient import ClusterRegistry, ArakoonNodeConfig, ClusterNodeConfig
         from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagement
         from ovs.extensions.generic.system import Ovs
@@ -773,7 +774,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
         vpool = VPoolList.get_vpool_by_name(vpool_name)
         storagedriver = None
         if vpool is not None:
-            if vpool.type == 'LOCAL':
+            if vpool.backend_type.code == 'local':
                 # Might be an issue, investigating whether it's on the same not or not
                 if len(vpool.storagedrivers) == 1 and vpool.storagedrivers[0].storagerouter.machine_id != unique_id:
                     raise RuntimeError('A local vPool with name {0} already exists'.format(vpool_name))
@@ -825,16 +826,19 @@ if Service.has_service('{0}'):
         if vpool is None:
             vpool = VPool()
             supported_backends = Manager._read_remote_config(client, 'volumedriver.supported.backends').split(',')
-            if 'REST' in supported_backends:
-                supported_backends.remove('REST')  # REST is not supported for now
-            vpool.type = parameters.get('type') or Helper.ask_choice(supported_backends, 'Select type of storage backend', default_value='CEPH_S3')
+            if 'rest' in supported_backends:
+                supported_backends.remove('rest')  # REST is not supported for now
+            backend_type = BackendTypeList.get_backend_type_by_code(
+                parameters.get('type') or Helper.ask_choice(supported_backends, 'Select type of storage backend', default_value='ceph_s3')
+            )
+            vpool.backend_type = backend_type
             connection_host = connection_port = connection_username = connection_password = None
-            if vpool.type in ['LOCAL', 'DISTRIBUTED']:
+            if vpool.backend_type.code in ['local', 'distributed']:
                 vpool.metadata = {'backend_type': 'LOCAL'}
-                mountpoint_bfs = parameters.get('mountpoint_bfs') or Helper.ask_string('Specify {0} storage backend directory'.format(vpool.type.lower()))
+                mountpoint_bfs = parameters.get('mountpoint_bfs') or Helper.ask_string('Specify {0} storage backend directory'.format(vpool.backend_type.code))
                 directories_to_create.append(mountpoint_bfs)
                 vpool.metadata['local_connection_path'] = mountpoint_bfs
-            if vpool.type == 'REST':
+            if vpool.backend_type.code == 'rest':
                 connection_host = parameters.get('connection_host') or Helper.ask_string('Provide REST ip address')
                 connection_port = parameters.get('connection_port') or Helper.ask_integer('Provide REST connection port', min_value=1, max_value=65535)
                 rest_connection_timeout_secs = parameters.get('connection_timeout') or Helper.ask_integer('Provide desired REST connection timeout(secs)',
@@ -845,13 +849,13 @@ if Service.has_service('{0}'):
                                   'rest_connection_verbose_logging': rest_connection_timeout_secs,
                                   'rest_connection_metadata_format': "JSON",
                                   'backend_type': 'REST'}
-            elif vpool.type in ('CEPH_S3', 'AMAZON_S3', 'SWIFT_S3'):
+            elif vpool.backend_type.code in ('ceph_s3', 'amazon_s3', 'swift_s3'):
                 connection_host = parameters.get('connection_host') or Helper.ask_string('Specify fqdn or ip address for your S3 compatible host')
                 connection_port = parameters.get('connection_port') or Helper.ask_integer('Specify port for your S3 compatible host: ', min_value=1,
                                                                                           max_value=65535)
                 connection_username = parameters.get('connection_username') or Helper.ask_string('Specify S3 access key')
                 connection_password = parameters.get('connection_password') or getpass.getpass()
-                if vpool.type in ['SWIFT_S3']:
+                if vpool.backend_type.code in ['swift_s3']:
                     strict_consistency = 'false'
                     s3_connection_flavour = 'SWIFT'
                 else:
@@ -868,7 +872,7 @@ if Service.has_service('{0}'):
                                   'backend_type': 'S3'}
 
             vpool.name = vpool_name
-            vpool.description = "{} {}".format(vpool.type, vpool_name)
+            vpool.description = "{} {}".format(vpool.backend_type.code, vpool_name)
             vpool.login = connection_username
             vpool.password = connection_password
             if not connection_host:
@@ -1028,7 +1032,6 @@ storagedriver_configuration.configure_filedriver(fd_config)
         dirs2create.append(storagedriver.mountpoint)
         dirs2create.append(mountpoint_cache + '/' + '/fd_' + vpool_name)
         dirs2create.append('{0}/fd_{1}'.format(mountpoint_cache, vpool_name))
-
 
         file_create_script = """
 import os
