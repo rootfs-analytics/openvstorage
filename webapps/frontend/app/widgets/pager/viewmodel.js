@@ -24,6 +24,7 @@ define([
         self.refresher = new Refresher();
 
         // Observables
+        self.items           = ko.observableArray([]);
         self.internalCurrent = ko.observable(1);
         self.headers         = ko.observableArray([]);
         self.settings        = ko.observable({});
@@ -117,15 +118,11 @@ define([
 
         // Durandal
         self.activate = function(settings) {
-            if (!settings.hasOwnProperty('items')) {
-                throw 'Items should be specified';
-            }
             if (!settings.hasOwnProperty('headers')) {
                 throw 'Headers should be specified';
             }
 
-            self.refresh = generic.tryGet(settings, 'viewportRefreshInterval');
-            self.viewportRefresh = generic.tryGet(settings, 'viewportRefresh');
+            self.loadData = generic.tryGet(settings, 'loadData');
             self.initialLoad = generic.tryGet(settings, 'initialLoad', ko.observable(false));
             self.settings(settings);
             self.headers(settings.headers);
