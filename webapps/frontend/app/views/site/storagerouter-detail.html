@@ -136,10 +136,10 @@ limitations under the License.
                                     <div>
                                         <input type="checkbox" data-bind="attr: { id: 'vpool_' + guid() },
                                                                           checked: $.inArray(guid(), $root.checkedVPoolGuids()) !== -1,
-                                                                          disable: true /*backendType() === 'LOCAL' || $.inArray(guid(), $parent.vPoolGuids) !== -1*/"
+                                                                          disable: true"
                                                 style="vertical-align: text-bottom;">
                                         <label data-bind="attr: { for: 'vpool_' + guid() },
-                                                          tooltip: $.inArray(guid(), $root.checkedVPoolGuids()) === -1 && backendType() === 'LOCAL' ? 'ovs:storagerouters.detail.localvpool' : ''"
+                                                          tooltip: $.inArray(guid(), $root.checkedVPoolGuids()) === -1 && backendType() === 'local' ? 'ovs:storagerouters.detail.localvpool' : ''"
                                                style="font-weight: normal; margin-left: 7px;">
                                             <span data-bind="text: name"></span>
                                         </label>

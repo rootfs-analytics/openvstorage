@@ -101,7 +101,8 @@ define([
                             fields.push('cache');
                             reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.mtptinuse', { what: $.t('ovs:generic.cachefs') }));
                         }
-                        if (self.storageDriver().mountpointBFS() === storageDriver.mountpointBFS() && $.inArray('bfs', fields) === -1 && (self.data.vPool().backendType() === 'LOCAL' || self.data.vPool().backendType() === 'DISTRIBUTED')) {
+                        if (self.storageDriver().mountpointBFS() === storageDriver.mountpointBFS() && $.inArray('bfs', fields) === -1 &&
+                            (self.data.vPool().backendType() === 'local' || self.data.vPool().backendType() === 'distributed')) {
                             valid = false;
                             fields.push('bfs');
                             reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.mtptinuse', { what: $.t('ovs:generic.bfs') }));

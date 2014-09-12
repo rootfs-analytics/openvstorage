@@ -45,13 +45,14 @@
             "KVM": "KVM"
         },
         "backendtypes": {
-            "S3": "S3",
-            "AMAZON_S3": "S3 compatible",
-            "CEPH_S3": "Ceph S3",
-            "SWIFT_S3": "Swift S3",
-            "LOCAL": "Local FS",
-            "REST": "REST backend",
-            "DISTRIBUTED": "Distributed FS"
+            "s3": "S3",
+            "amazon_s3": "S3 compatible",
+            "ceph_s3": "Ceph S3",
+            "swift_s3": "Swift S3",
+            "local": "Local FS",
+            "rest": "REST backend",
+            "distributed": "Distributed FS",
+            "alba": "Alternate Backend"
         },
         "mgmtcentertypes": {
             "VCENTER": "VMware vCenter",
@@ -171,7 +172,8 @@
         "noentries": "No entries available",
         "logging": "Kibana logging",
         "generated": "Generated",
-        "group": "Group"
+        "group": "Group",
+        "backendtype": "Type"
     },
     "storagerouters": {
         "title": "Storage Routers",
@@ -207,7 +209,7 @@
         "backendconnection": "Connection",
         "backendlogin": "Login",
         "statistics": "Statistics",
-        "backend": "Backend",
+        "backend": "BackendType",
         "freespace": "Free space",
         "detail": {
             "title": "vPool",
@@ -413,6 +415,15 @@
         "invalidcredentials": "The username/password combination were invalid or could not be validated.",
         "welcome": "Use the navigation to browse through the interface."
     },
+    "backends": {
+        "title": "Backends",
+        "backendtype": "Type",
+        "new": {
+            "complete": "Backend added",
+            "addsuccess": "The backend was added. Please open the details to configure",
+            "addfailed": "The backend could not be added: __why__"
+        }
+    },
     "notfound": {
         "title": "Page not found",
         "introduction": "The page you've requested was not found. Please navigate back, and try again or update your bookmarks."
@@ -427,7 +438,7 @@
                 "basicinfo": "Add basic vPool information",
                 "name": "Name:",
                 "invalidname": "vPool name is invalid",
-                "backendtype": "Backend:",
+                "backendtype": "BackendType:",
                 "host": "Host (FQDN/IP):",
                 "port": "Port:",
                 "timeout": "Timeout:",
@@ -443,11 +454,11 @@
             },
             "gathermountpoints": {
                 "basicinfo": "Enter/select the requested information. It will be shared accross all Storage Routers serving this vPool.",
-                "bfsinfo": "Backend Filesystem location which will contain all data for this vPool:",
+                "bfsinfo": "BackendType Filesystem location which will contain all data for this vPool:",
                 "mtptinfo": "Required locations:",
                 "otherinfo": "Other information:",
                 "tempfs": "Temporary FS:",
-                "bfs": "Backend FS:",
+                "bfs": "BackendType FS:",
                 "md": "Metadata:",
                 "cache": "Cache location:",
                 "mtptinuse": "The given __what__ location is already in use on this Storage Router",
@@ -621,8 +632,8 @@
     },
     "footer" : {
         "cachereads": "Reads served from the Cache:",
-        "datawritten": "Data written to the Backend:",
-        "dataread": "Data read from the Backend:",
+        "datawritten": "Data written to the BackendType:",
+        "dataread": "Data read from the BackendType:",
         "bandwidthsaved": "Bandwidth Saved:"
     },
     "events": {
@@ -666,6 +677,7 @@
         "cancel": "&#xf00d;",
         "logs": "&#xf02d;",
         "externallink": "&#xf08e;",
-        "password": "&#xf084;"
+        "password": "&#xf084;",
+        "vpools": "&#xf0c2;"
     }
 }

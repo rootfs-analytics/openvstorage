@@ -729,9 +729,9 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
 
                 rabbitmq_running, rabbitmq_pid, ovs_rabbitmq_running, same_process = SetupController._is_rabbitmq_running(client, True)
                 if ovs_rabbitmq_running and same_process:
-                    pass # correct process is running
+                    pass  # Correct process is running
                 elif rabbitmq_running and not ovs_rabbitmq_running:
-                    # wrong process is running, must be stopped and correct one started
+                    # Wrong process is running, must be stopped and correct one started
                     print('WARNING: an instance of rabbitmq-server is running, this needs to be stopped, ovs-rabbitmq will be started instead')
                     client.run('service rabbitmq-server stop', quiet=True)
                     time.sleep(5)
@@ -742,7 +742,7 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
                         print('Process already stopped')
                     client.run('service ovs-rabbitmq start', quiet=True)
                 elif not rabbitmq_running and not ovs_rabbitmq_running:
-                    #neither running
+                    # Neither running
                     client.run('service ovs-rabbitmq start', quiet=True)
 
             target_client = SSHClient.load(ip)
@@ -1228,7 +1228,6 @@ for config_file in os.listdir('/opt/OpenvStorage/config/voldrv_vpools'):
     def _is_rabbitmq_running(client, check_ovs = False):
         rabbitmq_running, rabbitmq_pid = False, 0
         ovs_rabbitmq_running, pid = False, -1
-        same_process = False
         output = client.run('service rabbitmq-server status', quiet=True)
         if 'unrecognized service' in output:
             output = None
@@ -1248,7 +1247,8 @@ for config_file in os.listdir('/opt/OpenvStorage/config/voldrv_vpools'):
                         if 'erlang' in item or 'rabbitmq' in item or 'beam' in item:
                             rabbitmq_running = True
         output = client.run('service ovs-rabbitmq status', quiet=True)
-        if 'stop/waiting' in output: pass
+        if 'stop/waiting' in output:
+            pass
         if 'start/running' in output:
             pid = output.split('process ')[1].strip()
             ovs_rabbitmq_running = True
