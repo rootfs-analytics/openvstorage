@@ -92,3 +92,10 @@ class ArakoonStore(object):
             return self._client.delete(key)
         except ArakoonNotFound as field:
             raise KeyNotFoundException(field)
+
+    @locked()
+    def nop(self):
+        """
+        Executes a nop command
+        """
+        return self._client.nop()
