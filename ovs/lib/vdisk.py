@@ -19,6 +19,7 @@ import pickle
 import uuid
 import os
 
+from ovs.lib.helpers.decorators import log
 from ovs.celery import celery
 from ovs.dal.hybrids.vdisk import VDisk
 from ovs.dal.hybrids.vmachine import VMachine
@@ -74,6 +75,7 @@ class VDiskController(object):
 
     @staticmethod
     @celery.task(name='ovs.disk.resize_from_voldrv')
+    @log('VOLUMEDRIVER_TASK')
     def resize_from_voldrv(volumename, volumesize, volumepath, storagedriver_id):
         """
         Resize a disk
@@ -100,6 +102,7 @@ class VDiskController(object):
 
     @staticmethod
     @celery.task(name='ovs.disk.rename_from_voldrv')
+    @log('VOLUMEDRIVER_TASK')
     def rename_from_voldrv(volumename, volume_old_path, volume_new_path, storagedriver_id):
         """
         Rename a disk
