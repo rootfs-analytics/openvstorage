@@ -48,8 +48,7 @@ define([
                         mountpoint_readcache2: self.data.mtptReadCache2(),
                         mountpoint_writecache: self.data.mtptWriteCache(),
                         mountpoint_foc: self.data.mtptFOC(),
-                        storage_ip: self.data.storageIP(),
-                        vrouter_port: self.data.vRouterPort()
+                        storage_ip: self.data.storageIP()
                     }
                 };
                 api.post('storagerouters/' + self.data.target().guid() + '/add_vpool', { data: post_data })

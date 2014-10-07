@@ -45,7 +45,6 @@ define(['knockout', 'jquery'], function(ko, $){
             host:           ko.observable('').extend({ regex: hostRegex }),
             port:           ko.observable(80).extend({ numeric: { min: 1, max: 65536 } }),
             timeout:        ko.observable(600).extend({ numeric: {}}),
-            vRouterPort:    ko.observable(12322).extend({ numeric: { min: 1, max: 65536 }, identifier: 'vrouterport' }),
             backends:       ko.observableArray(['LOCAL', 'CEPH_S3', 'AMAZON_S3', 'SWIFT_S3', 'DISTRIBUTED']),
             storageRouters: ko.observableArray([]),
             storageDrivers: ko.observableArray([]),
