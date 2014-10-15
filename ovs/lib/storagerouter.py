@@ -19,6 +19,7 @@ import copy
 import os
 import re
 import uuid
+import json
 
 from subprocess import check_output
 from ovs.celery import celery
@@ -36,6 +37,7 @@ from ovs.plugin.provider.configuration import Configuration
 from ovs.plugin.provider.package import Package
 from volumedriver.storagerouter.storagerouterclient import ClusterRegistry, ArakoonNodeConfig, ClusterNodeConfig, LocalStorageRouterClient
 from ovs.log.logHandler import LogHandler
+from ovs.extensions.openstack.cinder import OpenStackCinder
 
 logger = LogHandler('lib', name='storagerouter')
 
@@ -590,6 +592,23 @@ Service.start_service('{0}')
         vpool.size = vfs_info.f_blocks * vfs_info.f_bsize
         vpool.save()
 
+        # Configure Cinder
+        cinder_password = parameters.get('cinder_password', 'rooter') #default, for testing, should be None
+        cinder_user = parameters.get('cinder_user', 'admin')
+        tenant_name = parameters.get('tenant_name', 'admin')
+        controller_ip = parameters.get('controller_ip', '127.0.0.1') # Keystone host
+        if cinder_password:
+            osc = OpenStackCinder(cinder_password = cinder_password,
+                                  cinder_user = cinder_user,
+                                  tenant_name = tenant_name,
+                                  controller_ip = controller_ip)
+
+            osc.configure_vpool(vpool_name, storagedriver.mountpoint)
+            ovsdb = ArakoonManagement().getCluster('ovsdb').getClient()
+            ovsdb.set('ovs_openstack_cinder_%s' % storagedriver.guid,
+                      json.dumps([cinder_password, cinder_user, tenant_name, controller_ip]))
+
+
     @staticmethod
     @celery.task(name='ovs.storagerouter.remove_storagedriver')
     def remove_storagedriver(storagedriver_guid):
@@ -614,6 +633,19 @@ Service.start_service('{0}')
         services = ['volumedriver_{0}'.format(vpool.name),
                     'failovercache_{0}'.format(vpool.name)]
         storagedrivers_left = False
+
+        # Unconfigure Cinder
+        ovsdb = ArakoonManagement().getCluster('ovsdb').getClient()
+        key = 'ovs_openstack_cinder_%s' % storagedriver.guid
+        if ovsdb.exists(key):
+            cinder_password, cinder_user, tenant_name, controller_ip = json.loads(ovsdb.get(key))
+            client = SSHClient.load(ip)
+            System.exec_remote_python(client, """
+from ovs.extensions.openstack.cinder import OpenStackCinder
+osc = OpenStackCinder(cinder_password = '{0}', cinder_user = '{1}', tenant_name = '{2}', controller_ip = '{3}')
+osc.unconfigure_vpool('{4}', '{5}')
+""".format(cinder_password, cinder_user, tenant_name, controller_ip, vpool.name, storagedriver.mountpoint))
+            ovsdb.delete(key)
 
         # Stop services
         for current_storagedriver in vpool.storagedrivers:

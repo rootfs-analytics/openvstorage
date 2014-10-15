@@ -301,7 +301,7 @@ class VDiskController(object):
         if os.path.exists(location):
             raise RuntimeError('File already exists at %s' % location)
         client = SSHClient.load('127.0.0.1')
-        client.run_local('truncate -s %sG %s' % (size, location), sudo=True, shell=True)
+        client.run_local('truncate -s %sG %s' % (size, location))
 
     @staticmethod
     @celery.task(name='ovs.disk.delete_volume')
@@ -319,7 +319,7 @@ class VDiskController(object):
             logger.error('File already deleted at %s' % location)
             return
         client = SSHClient.load('127.0.0.1')
-        output = client.run_local('rm -f %s' % (location), sudo=True, shell=True)
+        output = client.run_local('rm -f %s' % (location))
         output = output.replace('\xe2\x80\x98', '"').replace('\xe2\x80\x99', '"')
         if os.path.exists(location):
             raise RuntimeError('Could not delete file %s, check logs. Output: %s' % (location, output))
@@ -343,4 +343,4 @@ class VDiskController(object):
         if not os.path.exists(location):
             raise RuntimeError('Volume not found at %s, use create_volume first.' % location)
         client = SSHClient.load('127.0.0.1')
-        client.run_local('truncate -s %sG %s' % (size, location), sudo=True, shell=True)
+        client.run_local('truncate -s %sG %s' % (size, location))
