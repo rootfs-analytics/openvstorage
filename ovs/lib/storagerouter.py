@@ -29,6 +29,7 @@ from ovs.dal.hybrids.vpool import VPool
 from ovs.dal.lists.vpoollist import VPoolList
 from ovs.dal.lists.storagedriverlist import StorageDriverList
 from ovs.dal.lists.storagerouterlist import StorageRouterList
+from ovs.dal.lists.backendtypelist import BackendTypeList
 from ovs.dal.lists.vmachinelist import VMachineList
 from ovs.extensions.generic.system import System
 from ovs.extensions.db.arakoon.ArakoonManagement import ArakoonManagementEx
