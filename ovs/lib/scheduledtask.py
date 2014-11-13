@@ -27,6 +27,7 @@ from ovs.plugin.provider.configuration import Configuration
 from ovs.celery_run import celery
 from ovs.lib.vmachine import VMachineController
 from ovs.lib.vdisk import VDiskController
+from ovs.dal.lists.vpoollist import VPoolList
 from ovs.dal.lists.vmachinelist import VMachineList
 from ovs.dal.lists.vdisklist import VDiskList
 from ovs.dal.lists.loglist import LogList
@@ -310,3 +311,46 @@ class ScheduledTaskController(object):
         for log in LogList.get_logs():
             if log.time < mark:
                 log.delete()
+
+    @staticmethod
+    @celery.task(name='ovs.scheduled.send_stats_to_hekad', bind=True)
+    @ensure_single(['ovs.scheduled.send_stats_to_hekad'])
+    def send_stats_to_hekad():
+        """
+        Sends stats to hekad, running on main node
+        """
+        def _clean(name):
+            return name.replace(' ', '').lower()
+
+        def _calculate(statistics, accessor):
+            if isinstance(accessor, list):
+                if accessor[2] == 'ratio':
+                    return int(float(statistics[accessor[0]]) / float((statistics[accessor[0]] + statistics[accessor[1]])) * 100.0)
+                elif accessor[2] == 'sum':
+                    return int(statistics[accessor[0]] + statistics[accessor[1]])
+            else:
+                return int(statistics[accessor])
+
+        from django.conf import settings
+        try:
+            settings.configure()
+        except:
+            pass
+        import statsd
+        client = statsd.StatsClient('10.100.169.100', 8125)
+
+        mapping = {'operations_ps': 'operations_ps',
+                   'data_read_ps': 'data_read_ps',
+                   'data_written_ps': 'data_written_ps',
+                   'cache_ratio': ['cache_hits_ps', 'sco_cache_misses_ps', 'ratio']}
+        for vpool in VPoolList.get_vpools():
+            for metric, statskey in mapping.iteritems():
+                client.gauge('ovs.vpools.{0}.{1}'.format(_clean(vpool.name), metric), _calculate(vpool.statistics, statskey))
+            for vmachine in vpool.vmachines:
+                for metric, statskey in mapping.iteritems():
+                    client.gauge('ovs.vmachines.{0}.{1}'.format(_clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
+                for vdisk in vmachine.vdisks:
+                    for metric, statskey in mapping.iteritems():
+                        data = _calculate(vdisk.statistics, statskey)
+                        client.gauge('ovs.vdisks.pervmachine.{0}.{1}.{2}'.format(_clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
+                        client.gauge('ovs.vdisks.pervpool.{0}.{1}.{2}'.format(_clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)

@@ -23,7 +23,7 @@ sys.path.append('/opt/OpenvStorage')
 import os
 from kombu import Queue
 from celery import Celery
-from celery.schedules import crontab
+from celery.schedules import crontab, timedelta
 from celery.signals import task_postrun, worker_process_init
 from ovs.lib.messaging import MessageController
 from ovs.log.logHandler import LogHandler
@@ -93,6 +93,14 @@ celery.conf.CELERYBEAT_SCHEDULE = {
     'logs-cleanup': {
         'task': 'ovs.scheduled.clean_logs',
         'schedule': crontab(minute='30', hour='0'),
+        'args': []
+    },
+    # Send statistics to a hekad node somewhere on the environment
+    # @TODO: POC - This hekad is assumed to be running somewhere. We need some failover, multinode, clustering, ...
+    # > executes every 5 seconds
+    'send-stats-to-hekad': {
+        'task': 'ovs.scheduled.send_stats_to_hekad',
+        'schedule': timedelta(seconds=5),
         'args': []
     }
 }
