@@ -331,11 +331,6 @@ class ScheduledTaskController(object):
             else:
                 return int(statistics[accessor])
 
-        from django.conf import settings
-        try:
-            settings.configure()
-        except:
-            pass
         import statsd
         client = statsd.StatsClient('10.100.169.100', 8125)
 
