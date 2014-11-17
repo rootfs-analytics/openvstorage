@@ -784,6 +784,11 @@ EOF
     """.format(cluster_name, node_name, 'extra', SetupController.avahi_filename))
         SetupController._change_service_state(target_client, 'avahi-daemon', 'restart')
 
+        config_filename = '/opt/OpenvStorage/config/ovs.cfg'
+        ovs_config = SetupController._remote_config_read(target_client, config_filename)
+        ovs_config.set('grid', 'clustername', cluster_name)
+        SetupController._remote_config_write(target_client, config_filename, ovs_config)
+
         logger.info('Extra node complete')
 
     @staticmethod

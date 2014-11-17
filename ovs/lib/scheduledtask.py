@@ -332,20 +332,21 @@ class ScheduledTaskController(object):
                 return int(statistics[accessor])
 
         import statsd
-        client = statsd.StatsClient('10.100.169.100', 8125)
+        client = statsd.StatsClient()
 
+        cluster_name = Configuration.get('ovs.grid.clustername')
         mapping = {'operations_ps': 'operations_ps',
                    'data_read_ps': 'data_read_ps',
                    'data_written_ps': 'data_written_ps',
                    'cache_ratio': ['cache_hits_ps', 'sco_cache_misses_ps', 'ratio']}
         for vpool in VPoolList.get_vpools():
             for metric, statskey in mapping.iteritems():
-                client.gauge('ovs.vpools.{0}.{1}'.format(_clean(vpool.name), metric), _calculate(vpool.statistics, statskey))
+                client.gauge('ovs.{0}.vpools.{1}.{2}'.format(_clean(cluster_name), _clean(vpool.name), metric), _calculate(vpool.statistics, statskey))
             for vmachine in vpool.vmachines:
                 for metric, statskey in mapping.iteritems():
-                    client.gauge('ovs.vmachines.{0}.{1}'.format(_clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
+                    client.gauge('ovs.{0}.vmachines.{1}.{2}'.format(_clean(cluster_name), _clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
                 for vdisk in vmachine.vdisks:
                     for metric, statskey in mapping.iteritems():
                         data = _calculate(vdisk.statistics, statskey)
-                        client.gauge('ovs.vdisks.pervmachine.{0}.{1}.{2}'.format(_clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
-                        client.gauge('ovs.vdisks.pervpool.{0}.{1}.{2}'.format(_clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)
+                        client.gauge('ovs.{0}.vdisks.pervmachine.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
+                        client.gauge('ovs.{0}.vdisks.pervpool.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)
