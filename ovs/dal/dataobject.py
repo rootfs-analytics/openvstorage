@@ -115,7 +115,7 @@ class DataObject(object):
     __metaclass__ = MetaClass
 
     #######################
-    ## Attributes
+    # Attributes
     #######################
 
     # Properties that needs to be overwritten by implementation
@@ -124,7 +124,7 @@ class DataObject(object):
     _relations = []   # Blueprint for relations
 
     #######################
-    ## Constructor
+    # Constructor
     #######################
 
     def __new__(cls, *args, **kwargs):
@@ -258,7 +258,7 @@ class DataObject(object):
                 setattr(self, field, value)
 
     #######################
-    ## Helper methods for dynamic getting and setting
+    # Helper methods for dynamic getting and setting
     #######################
 
     def _add_property(self, prop):
@@ -423,7 +423,7 @@ class DataObject(object):
             raise RuntimeError('Property {0} does not exist on this object.'.format(key))
 
     #######################
-    ## Saving data to persistent store and invalidating volatile store
+    # Saving data to persistent store and invalidating volatile store
     #######################
 
     def save(self, recursive=False, skip=None):
@@ -580,7 +580,7 @@ class DataObject(object):
         self._new = False
 
     #######################
-    ## Other CRUDs
+    # Other CRUDs
     #######################
 
     def delete(self, abandon=False):
@@ -737,7 +737,7 @@ class DataObject(object):
             setattr(self, key, getattr(other_object, key))
 
     #######################
-    ## Properties
+    # Properties
     #######################
 
     @property
@@ -747,8 +747,16 @@ class DataObject(object):
         """
         return self._guid
 
+    @property
+    def shortguid(self):
+        """
+        A shorter guid, being the first 8 characters of this object's guid
+        NOT GUARANTEED TO BE UNIQUE
+        """
+        return self.guid[:8]
+
     #######################
-    ## Helper methods
+    # Helper methods
     #######################
 
     def _backend_property(self, function, dynamic):

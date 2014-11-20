@@ -319,8 +319,11 @@ class ScheduledTaskController(object):
         """
         Sends stats to hekad, running on main node
         """
-        def _clean(name):
-            return name.replace(' ', '').lower()
+        def _clean(item):
+            if isinstance(item, basestring):
+                return item.replace(' ', '').lower()
+            else:
+                return '{0}-{1}'.format(_clean(item.name), _clean(item.shortguid))
 
         def _calculate(statistics, accessor):
             if isinstance(accessor, list):
@@ -348,9 +351,9 @@ class ScheduledTaskController(object):
                 client.gauge('ovs.{0}.vpools.{1}.{2}'.format(_clean(cluster_name), _clean(vpool.name), metric), _calculate(vpool.statistics, statskey))
         for vmachine in VMachineList.get_customer_vmachines():
             for metric, statskey in mapping.iteritems():
-                client.gauge('ovs.{0}.vmachines.{1}.{2}'.format(_clean(cluster_name), _clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
+                client.gauge('ovs.{0}.vmachines.{1}.{2}'.format(_clean(cluster_name), _clean(vmachine), metric), _calculate(vmachine.statistics, statskey))
             for vdisk in vmachine.vdisks:
                 for metric, statskey in mapping.iteritems():
                     data = _calculate(vdisk.statistics, statskey)
-                    client.gauge('ovs.{0}.vdisks.pervmachine.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
-                    client.gauge('ovs.{0}.vdisks.pervpool.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)
+                    client.gauge('ovs.{0}.vdisks.pervmachine.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vmachine), _clean(vdisk), metric), data)
+                    client.gauge('ovs.{0}.vdisks.pervpool.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vpool.name), _clean(vdisk), metric), data)
