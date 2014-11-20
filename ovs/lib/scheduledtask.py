@@ -325,7 +325,11 @@ class ScheduledTaskController(object):
         def _calculate(statistics, accessor):
             if isinstance(accessor, list):
                 if accessor[2] == 'ratio':
-                    return int(float(statistics[accessor[0]]) / float((statistics[accessor[0]] + statistics[accessor[1]])) * 100.0)
+                    denominator = statistics[accessor[0]] + statistics[accessor[1]]
+                    if denominator:
+                        return int(float(statistics[accessor[0]]) / float(denominator) * 100.0)
+                    else:
+                        return 0
                 elif accessor[2] == 'sum':
                     return int(statistics[accessor[0]] + statistics[accessor[1]])
             else:
@@ -342,11 +346,11 @@ class ScheduledTaskController(object):
         for vpool in VPoolList.get_vpools():
             for metric, statskey in mapping.iteritems():
                 client.gauge('ovs.{0}.vpools.{1}.{2}'.format(_clean(cluster_name), _clean(vpool.name), metric), _calculate(vpool.statistics, statskey))
-            for vmachine in vpool.vmachines:
+        for vmachine in VMachineList.get_customer_vmachines():
+            for metric, statskey in mapping.iteritems():
+                client.gauge('ovs.{0}.vmachines.{1}.{2}'.format(_clean(cluster_name), _clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
+            for vdisk in vmachine.vdisks:
                 for metric, statskey in mapping.iteritems():
-                    client.gauge('ovs.{0}.vmachines.{1}.{2}'.format(_clean(cluster_name), _clean(vmachine.name), metric), _calculate(vmachine.statistics, statskey))
-                for vdisk in vmachine.vdisks:
-                    for metric, statskey in mapping.iteritems():
-                        data = _calculate(vdisk.statistics, statskey)
-                        client.gauge('ovs.{0}.vdisks.pervmachine.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
-                        client.gauge('ovs.{0}.vdisks.pervpool.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)
+                    data = _calculate(vdisk.statistics, statskey)
+                    client.gauge('ovs.{0}.vdisks.pervmachine.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vmachine.name), _clean(vdisk.name), metric), data)
+                    client.gauge('ovs.{0}.vdisks.pervpool.{1}.{2}.{3}'.format(_clean(cluster_name), _clean(vdisk.vpool.name), _clean(vdisk.name), metric), data)
