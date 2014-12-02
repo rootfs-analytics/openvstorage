@@ -1102,13 +1102,11 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             if SetupController._has_service(target_client, service):
                 SetupController._enable_service(target_client, service)
                 SetupController._change_service_state(target_client, service, 'start')
-        for service in ['watcher-framework', 'watcher-volumedriver']:
-            SetupController._change_service_state(target_client, service, 'restart')
 
-        logger.debug('Restarting workers')
+        SetupController._change_service_state(target_client, 'watcher-volumedriver', 'restart')
         for node in nodes:
             node_client = SSHClient.load(node)
-            SetupController._change_service_state(node_client, 'workers', 'restart')
+            SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         print '\n+++ Announcing service +++\n'
         logger.info('Announcing service')
@@ -1333,11 +1331,11 @@ for json_file in os.listdir('{0}/voldrv_vpools'.format(configuration_dir)):
             for service in [s for s in SetupController.master_node_services if s not in SetupController.master_services]:
                 SetupController._change_service_state(node_client, service, 'restart')
         target_client = SSHClient.load(cluster_ip)
-        for service in ['watcher-framework', 'watcher-volumedriver']:
-            SetupController._change_service_state(target_client, service, 'restart')
+
+        SetupController._change_service_state(target_client, 'watcher-volumedriver', 'restart')
         for node in nodes:
             node_client = SSHClient.load(node)
-            SetupController._change_service_state(node_client, 'workers', 'restart')
+            SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         print '\n+++ Announcing service +++\n'
         logger.info('Announcing service')
