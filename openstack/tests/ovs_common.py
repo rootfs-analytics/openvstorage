@@ -206,7 +206,7 @@ class OVSPluginTestCase(test.TestCase):
                     self._debug('vpool not ready yet %s' % (str(ex)))
                     pass
             attempt += 1
-            time.sleep(1)
+            time.sleep(2)
         raise RuntimeError('Vpool %s was not modeled correctly or did not start.' % VPOOL_NAME)
 
     def _remove_vpool(self):
@@ -230,7 +230,7 @@ class OVSPluginTestCase(test.TestCase):
                 self._debug('vpool %s deleted' % VPOOL_NAME)
                 return
             attempt += 1
-            time.sleep(1)
+            time.sleep(2)
         raise RuntimeError('Vpool %s was not removed correctly.' % VPOOL_NAME)
 
 
@@ -250,7 +250,7 @@ class OVSPluginTestCase(test.TestCase):
                     return True
             self._debug('not found, sleep 1')
             attempt += 1
-            time.sleep(1)
+            time.sleep(2)
         self._debug('still not found, return')
         return False
 
@@ -268,7 +268,7 @@ class OVSPluginTestCase(test.TestCase):
                 if len(snaps) == 1:
                     return True
             attempt += 1
-            time.sleep(1)
+            time.sleep(2)
         return False
 
     def _random_volume_name(self):
@@ -334,7 +334,7 @@ class OVSPluginTestCase(test.TestCase):
         image = self._glance_get_image_by_name(image_name)
         self.glance_client.images.delete(image)
 
-    def _glance_wait_until_image_state(self, image_name, state='active', timeout_sec=300):
+    def _glance_wait_until_image_state(self, image_name, state='active', timeout_sec=600):
         start = time.time()
         not_found = 0
         initial_state = None
@@ -485,7 +485,7 @@ class OVSPluginTestCase(test.TestCase):
         self._debug('volume %s is available' % name)
         return volume
 
-    def _cinder_delete_volume(self, volume, timeout = 300):
+    def _cinder_delete_volume(self, volume, timeout=600):
         """
         Delete volume, wait(volume might not be yet in state to be deleted)
         If volume is in-use we will raise error immediately
@@ -522,7 +522,7 @@ class OVSPluginTestCase(test.TestCase):
         self._get_cinder_client()
         return  dict((s.id, s.display_name) for s in self.cinder_client.volume_snapshots.list())
 
-    def _cinder_delete_snapshot(self, snapshot, timeout=300):
+    def _cinder_delete_snapshot(self, snapshot, timeout=600):
         self._get_cinder_client()
         self.cinder_client.volume_snapshots.delete(snapshot)
         self._cinder_wait_until_snapshot_not_found(snapshot.id, timeout)
@@ -563,7 +563,7 @@ class OVSPluginTestCase(test.TestCase):
 
 
     # CINDER WAIT
-    def _cinder_wait_until_volume_state(self, volume_id, status, timeout_sec=300):
+    def _cinder_wait_until_volume_state(self, volume_id, status, timeout_sec=600):
         """
         Wait until volume has status, timeout after X sec
         Expects volume to exist
@@ -586,7 +586,7 @@ class OVSPluginTestCase(test.TestCase):
             time.sleep(1)
         raise RuntimeError('Volume %s is not in state %s after %i seconds, current status %s' % (volume_id, status, timeout_sec, volume.status))
 
-    def _cinder_wait_until_snapshot_state(self, snapshot_id, status, timeout_sec=300):
+    def _cinder_wait_until_snapshot_state(self, snapshot_id, status, timeout_sec=600):
         """
         Wait until snapshot has status, timeout after X sec
         Expects snapshot to exist
@@ -601,7 +601,7 @@ class OVSPluginTestCase(test.TestCase):
             time.sleep(1)
         raise RuntimeError('Snapshot %s is not in state %s after %i seconds, current status %s' % (snapshot_id, status, timeout_sec, snapshot.status))
 
-    def _cinder_wait_until_snapshot_not_found(self, snapshot_id, timeout_sec = 300):
+    def _cinder_wait_until_snapshot_not_found(self, snapshot_id, timeout_sec=600):
         """
         Wait until snapshot.get returns 404
         Other errors are raised, timeout after X sec
@@ -620,7 +620,7 @@ class OVSPluginTestCase(test.TestCase):
             time.sleep(1)
         raise RuntimeError('Snapshot %s is still modeled after %i seconds, current status %s' % (snapshot_id, timeout_sec, snapshot.status))
 
-    def _cinder_wait_until_volume_not_found(self, volume_id, timeout_sec=300):
+    def _cinder_wait_until_volume_not_found(self, volume_id, timeout_sec=600):
         """
         Wait until volume.get returns 404
         Other errors are raised, timeout after X sec
