@@ -483,7 +483,7 @@ for directory in {0}:
                                                                       current_storagerouter.ip)})
 
         alba_proxy = storagedriver.alba_proxy
-        if alba_proxy is None:
+        if alba_proxy is None and vpool.backend_type.code == 'alba':
             service = Service()
             service.storagerouter = storagerouter
             service.ports = [StorageRouterController._get_free_ports(client, model_ports_in_use, 1)]
