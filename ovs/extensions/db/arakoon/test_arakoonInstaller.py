@@ -117,16 +117,6 @@ class TestArakoonInstaller(TestCase):
         print "### Three node configuration files:"
         self._print_config_files_for(self.cluster_name)
 
-    def test_duplicate_cluster(self):
-        src_cluster = 'abm_0'
-        tgt_cluster = 'abm_2'
-        self.ai.clear_config()
-        self._create_config()
-        self.ai.generate_configs()
-
-        self.ai.clone_cluster('10.100.131.62', src_cluster, tgt_cluster)
-        self._print_config_files_for(tgt_cluster)
-
     def test_exclude_ports(self):
         # @todo: to implement
         pass
