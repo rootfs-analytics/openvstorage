@@ -73,8 +73,7 @@ class SetupController(object):
     @staticmethod
     def setup_node(ip=None, force_type=None, verbose=False):
         """
-        Sets up a node.
-        1. Some magic figuring out here:
+        Sets up a node.        1. Some magic figuring out here:
            - Which cluster (new, joining)
            - Cluster role (master, extra)
         2. Prepare cluster
@@ -456,24 +455,6 @@ System.update_hosts_file(hostname='{0}', ip='{1}')
             ports = [SetupController.arakoon_exclude_ports[cluster], SetupController.arakoon_exclude_ports[cluster] + 1]
             ArakoonInstaller.create_cluster(cluster, cluster_ip, ports)
 
-        print 'Setting up elastic search'
-        logger.info('Setting up elastic search')
-        target_client = SSHClient.load(cluster_ip)
-        SetupController._add_service(target_client, 'elasticsearch')
-        config_file = '/etc/elasticsearch/elasticsearch.yml'
-        SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
-        target_client.run('cp /opt/OpenvStorage/config/elasticsearch.yml /etc/elasticsearch/')
-        target_client.run('mkdir -p /opt/data/elasticsearch/work')
-        target_client.run('chown -R elasticsearch:elasticsearch /opt/data/elasticsearch*')
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<CLUSTER_NAME>', 'ovses_{0}'.format(cluster_name),
-                                                 add=False)
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<NODE_NAME>', node_name)
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<NETWORK_PUBLISH>', cluster_ip)
-        SetupController._change_service_state(target_client, 'elasticsearch', 'start')
-
         print 'Setting up logstash'
         logger.info('Setting up logstash')
         SetupController._replace_param_in_config(target_client, '/etc/logstash/conf.d/indexer.conf',
@@ -536,8 +517,6 @@ EOF
             if SetupController._has_service(target_client, service):
                 SetupController._enable_service(target_client, service)
                 SetupController._change_service_state(target_client, service, 'start')
-        logger.info('Update ES configuration')
-        SetupController._update_es_configuration(target_client, 'true')  # Also starts the services
 
         print 'Start model migration'
         logger.debug('Start model migration')
@@ -675,7 +654,7 @@ EOF
         print '\n+++ Adding extra node +++\n'
         logger.info('Adding extra node')
 
-        # Elastic search setup
+        # Logstash setup
         print 'Configuring logstash'
         target_client = SSHClient.load(cluster_ip)
         SetupController._replace_param_in_config(target_client, '/etc/logstash/conf.d/indexer.conf',
@@ -873,24 +852,7 @@ EOF
         if len(master_nodes) == 0:
             raise RuntimeError('There should be at least one other master node')
 
-        # Elastic search setup
-        print 'Configuring elastic search'
-        target_client = SSHClient.load(cluster_ip)
-        SetupController._add_service(target_client, 'elasticsearch')
-        config_file = '/etc/elasticsearch/elasticsearch.yml'
-        SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
-        target_client.run('cp /opt/OpenvStorage/config/elasticsearch.yml /etc/elasticsearch/')
-        target_client.run('mkdir -p /opt/data/elasticsearch/work')
-        target_client.run('chown -R elasticsearch:elasticsearch /opt/data/elasticsearch*')
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<CLUSTER_NAME>', 'ovses_{0}'.format(cluster_name),
-                                                 add=False)
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<NODE_NAME>', node_name)
-        SetupController._replace_param_in_config(target_client, config_file,
-                                                 '<NETWORK_PUBLISH>', cluster_ip)
-        SetupController._change_service_state(target_client, 'elasticsearch', 'start')
-
+        # Logstash setup
         SetupController._replace_param_in_config(target_client, '/etc/logstash/conf.d/indexer.conf',
                                                  '<CLUSTER_NAME>', 'ovses_{0}'.format(cluster_name))
         SetupController._change_service_state(target_client, 'logstash', 'restart')
@@ -1064,8 +1026,6 @@ for json_file in os.listdir(configuration_dir):
 
         print 'Starting services'
         target_client = SSHClient.load(cluster_ip)
-        logger.info('Update ES configuration')
-        SetupController._update_es_configuration(target_client, 'true')
         logger.info('Starting services')
         for service in SetupController.master_services:
             if SetupController._has_service(target_client, service):
@@ -1195,18 +1155,6 @@ EOF
                 master_nodes.remove(cluster_ip)
         if len(master_nodes) == 0:
             raise RuntimeError('There should be at least one other master node')
-
-        # Elastic search setup
-        print 'Unconfiguring elastic search'
-        target_client = SSHClient.load(cluster_ip)
-        if SetupController._has_service(target_client, 'elasticsearch'):
-            SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
-            target_client.run('rm -f /etc/elasticsearch/elasticsearch.yml')
-            SetupController._remove_service(target_client, 'elasticsearch')
-
-            SetupController._replace_param_in_config(target_client, '/etc/logstash/conf.d/indexer.conf',
-                                                     '<CLUSTER_NAME>', 'ovses_{0}'.format(cluster_name))
-        SetupController._change_service_state(target_client, 'logstash', 'restart')
 
         print 'Leaving arakoon cluster'
         logger.info('Leaving arakoon cluster')
@@ -2035,18 +1983,6 @@ print blk_devices
             if safetycounter == timeout:
                 raise RuntimeError('Service {0} could not be {1} on node {2}'.format(name, action, client.ip))
             print '  [{0}] {1} {2}'.format(client.ip, name, action)
-
-    @staticmethod
-    def _update_es_configuration(es_client, value):
-        # update elasticsearch configuration
-        config_file = '/etc/elasticsearch/elasticsearch.yml'
-        SetupController._change_service_state(es_client, 'elasticsearch', 'stop')
-        SetupController._replace_param_in_config(es_client, config_file,
-                                                 '<IS_POTENTIAL_MASTER>', value)
-        SetupController._replace_param_in_config(es_client, config_file,
-                                                 '<IS_DATASTORE>', value)
-        SetupController._change_service_state(es_client, 'elasticsearch', 'start')
-        SetupController._change_service_state(es_client, 'logstash', 'restart')
 
     @staticmethod
     def _configure_amqp_to_volumedriver(client, vpname=None):

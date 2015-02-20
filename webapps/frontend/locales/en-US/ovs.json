@@ -207,10 +207,6 @@
             "storageroutervpoollink": "vPools served by this Storage Router",
             "updateserving": "Save changes",
             "localvpool": "This is a local vPool which can not be shared across multiple Storage Routers",
-            "logging": "Storage Router logs",
-            "logginginfo1": "Open vStorage uses Logstash/Kibana for logging.",
-            "logginginfo2": "Open Kibana",
-            "logginginfo3": "to view this Storage Router's logs."
         }
     },
     "vpools" : {

@@ -27,7 +27,6 @@ elif [ "$1" = "collect" ] ; then
     rm -f $LOGFILE.gz
     touch $LOGFILE
     tar uvf $LOGFILE /var/log/arakoon*
-    tar uvf $LOGFILE /var/log/elasticsearch*
     tar uvf $LOGFILE /var/log/installer*
     tar uvf $LOGFILE /var/log/logstash*
     tar uvf $LOGFILE /var/log/nginx*
