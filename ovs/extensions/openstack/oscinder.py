@@ -38,7 +38,7 @@ class OpenStackCinder(object):
     """
 
     def __init__(self, cinder_password=None, cinder_user='admin', tenant_name='admin', controller_ip='127.0.0.1'):
-        self.client = SSHClient.load('127.0.0.1')
+        self.client = SSHClient()
         auth_url = 'http://{}:35357/v2.0'.format(controller_ip)
         self.cinder_client = None
 

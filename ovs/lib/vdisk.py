@@ -356,7 +356,7 @@ class VDiskController(object):
         storagerouter = StorageRouter(new_vdisk.storagerouter_guid)
         mountpoint = storagedriver.mountpoint
         location = "{0}{1}".format(mountpoint, disk_path)
-        client = SSHClient.load(storagerouter.pmachine.ip)
+        client = SSHClient(storagerouter.pmachine.ip)
         print(client.run('chmod 664 "{0}"'.format(location)))
         print(client.run('chown ovs:ovs "{0}"'.format(location)))
         return {'diskguid': new_vdisk.guid, 'name': new_vdisk.name,
@@ -377,7 +377,7 @@ class VDiskController(object):
         """
         if os.path.exists(location):
             raise RuntimeError('File already exists at %s' % location)
-        client = SSHClient.load('127.0.0.1')
+        client = SSHClient()
         try:
             output = client.run_local('truncate -s {0}G "{1}"'.format(size, location))
         except SystemExit as ex:
@@ -402,8 +402,8 @@ class VDiskController(object):
         if not os.path.exists(location):
             logger.error('File already deleted at %s' % location)
             return
-        client = SSHClient.load('127.0.0.1')
-        output = client.run_local('rm -f "{0}"'.format(location))
+        client = SSHClient()
+        output = client.run('rm -f "{0}"'.format(location))
         output = output.replace('\xe2\x80\x98', '"').replace('\xe2\x80\x99', '"')
         if os.path.exists(location):
             raise RuntimeError('Could not delete file %s, check logs. Output: %s' % (location, output))
@@ -426,8 +426,8 @@ class VDiskController(object):
         """
         if not os.path.exists(location):
             raise RuntimeError('Volume not found at %s, use create_volume first.' % location)
-        client = SSHClient.load('127.0.0.1')
-        print(client.run_local('truncate -s {0}G "{1}"'.format(size, location)))
+        client = SSHClient()
+        print(client.run('truncate -s {0}G "{1}"'.format(size, location)))
         VDiskController.own_volume(location)
 
     @staticmethod
@@ -438,13 +438,13 @@ class VDiskController(object):
         if not os.path.exists(location):
             raise RuntimeError('Volume not found at %s, use create_volume first.' % location)
 
-        client = SSHClient.load('127.0.0.1')
+        client = SSHClient()
         osc = OpenStackCinder()
-        print(client.run_local('chmod 664 "{0}"'.format(location)))
+        print(client.run('chmod 664 "{0}"'.format(location)))
         try:
             if osc.is_devstack:
-                print(client.run_local('chgrp stack "{0}"'.format(location)))
+                print(client.run('chgrp stack "{0}"'.format(location)))
             elif osc.is_openstack:
-                print(client.run_local('chgrp cinder "{0}"'.format(location)))
+                print(client.run('chgrp cinder "{0}"'.format(location)))
         except SystemExit as ex:
             raise RuntimeError(str(ex))

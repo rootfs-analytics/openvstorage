@@ -105,7 +105,7 @@ class StorageRouterController(object):
         if not re.match('^[0-9a-z]+(\-+[0-9a-z]+)*$', vpool_name):
             raise ValueError('Invalid vpool_name given')
 
-        client = SSHClient.load(ip)  # Make sure to ALWAYS reload the client, as Fabric seems to be singleton-ish
+        client = SSHClient(ip)
         unique_id = System.get_my_machine_id(client)
 
         storagerouter = None
@@ -146,7 +146,7 @@ class StorageRouterController(object):
 
         # Stop services
         for sr in all_storagerouters:
-            node_client = SSHClient.load(sr.ip)
+            node_client = SSHClient(sr.ip)
             System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
@@ -159,7 +159,6 @@ if Service.has_service('{0}'):
 """.format(voldrv_service))
 
         # Keep in mind that if the Storage Driver exists, the vPool does as well
-        client = SSHClient.load(ip)
         mountpoint_bfs = ''
         directories_to_create = []
 
@@ -256,7 +255,6 @@ if Service.has_service('{0}'):
         directories_to_create.append(mountpoint_writecache)
         directories_to_create.append(mountpoint_foc)
 
-        client = SSHClient.load(ip)
         dir_create_script = """
 import os
 for directory in {0}:
@@ -576,14 +574,13 @@ os.chmod('{0}', 0777)
 
         mds_config_set = MDSServiceController.get_mds_storagedriver_config_set(vpool)
         for sr in all_storagerouters:
-            node_client = SSHClient.load(sr.ip)
+            node_client = SSHClient(sr.ip)
             storagedriver_config = StorageDriverConfiguration('storagedriver', vpool_name)
             storagedriver_config.load(node_client)
             if storagedriver_config.is_new is False:
                 storagedriver_config.clean()  # Clean out obsolete values
                 storagedriver_config.configure_filesystem(fs_metadata_backend_mds_nodes=mds_config_set[sr.guid])
                 storagedriver_config.save(node_client)
-        client = SSHClient.load(ip)
 
         dirs2create.append(storagedriver.mountpoint)
         dirs2create.append(mountpoint_writecache + '/fd_' + vpool_name)
@@ -638,7 +635,7 @@ Service.add_service(package=('openvstorage', 'failovercache'), name='failovercac
 
         # Start services
         for sr in all_storagerouters:
-            node_client = SSHClient.load(sr.ip)
+            node_client = SSHClient(sr.ip)
             System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 Service.enable_service('{0}')
@@ -694,6 +691,7 @@ Service.start_service('{0}')
         storagedriver = StorageDriver(storagedriver_guid)
         storagerouter = storagedriver.storagerouter
         ip = storagerouter.ip
+        client = SSHClient(ip)
         pmachine = storagerouter.pmachine
         vmachines = VMachineList.get_customer_vmachines()
         pmachine_guids = [vm.pmachine_guid for vm in vmachines]
@@ -724,13 +722,13 @@ Service.start_service('{0}')
         for current_storagedriver in vpool.storagedrivers:
             if current_storagedriver.guid != storagedriver_guid:
                 storagedrivers_left = True
-            client = SSHClient.load(current_storagedriver.storagerouter.ip)
-            System.exec_remote_python(client, """
+            node_client = SSHClient(current_storagedriver.storagerouter.ip)
+            System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
     Service.disable_service('{0}')
 """.format(voldrv_service))
-            System.exec_remote_python(client, """
+            System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
     Service.stop_service('{0}')
@@ -741,7 +739,6 @@ if Service.has_service('{0}'):
         key = str('ovs_openstack_cinder_%s' % storagedriver.vpool_guid)
         if ovsdb.exists(key):
             cinder_password, cinder_user, tenant_name, controller_ip, _ = ovsdb.get(key)
-            client = SSHClient.load(ip)
             System.exec_remote_python(client, """
 from ovs.extensions.openstack.oscinder import OpenStackCinder
 osc = OpenStackCinder(cinder_password = '{0}', cinder_user = '{1}', tenant_name = '{2}', controller_ip = '{3}')
@@ -751,7 +748,6 @@ osc.unconfigure_vpool('{4}', '{5}', {6})
                 ovsdb.delete(key)
 
         # KVM pool
-        client = SSHClient.load(ip)
         if pmachine.hvtype == 'KVM':
             if vpool.name in client.run('virsh pool-list --all'):
                 client.run('virsh pool-destroy {0}'.format(vpool.name))
@@ -764,7 +760,6 @@ osc.unconfigure_vpool('{4}', '{5}', {6})
         services_to_remove = [voldrv_service, foc_service] + [mdsservice.service.name for mdsservice in removal_mdsservices]
         if storagedriver.alba_proxy is not None:
             services_to_remove.append(albaproxy_service)
-        client = SSHClient.load(ip)
         for service in services_to_remove:
             System.exec_remote_python(client, """
 from ovs.plugin.provider.service import Service
@@ -802,7 +797,6 @@ if Service.has_service('{0}'):
                 print('Could not destroy filesystem or erase node configs due to error: {}'.format(ex))
 
         # Cleanup directories
-        client = SSHClient.load(ip)
         client.run('rm -rf {}/read1_{}'.format(storagedriver.mountpoint_readcache1, vpool.name))
         if storagedriver.mountpoint_readcache2:
             client.run('rm -rf {}/read2_{}'.format(storagedriver.mountpoint_readcache2, vpool.name))
@@ -838,13 +832,13 @@ if Service.has_service('{0}'):
             # Restart leftover services
             for current_storagedriver in vpool.storagedrivers:
                 if current_storagedriver.guid != storagedriver_guid:
-                    client = SSHClient.load(current_storagedriver.storagerouter.ip)
-                    System.exec_remote_python(client, """
+                    node_client = SSHClient(current_storagedriver.storagerouter.ip)
+                    System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
     Service.enable_service('{0}')
 """.format(voldrv_service))
-                    System.exec_remote_python(client, """
+                    System.exec_remote_python(node_client, """
 from ovs.plugin.provider.service import Service
 if Service.has_service('{0}'):
     Service.start_service('{0}')
