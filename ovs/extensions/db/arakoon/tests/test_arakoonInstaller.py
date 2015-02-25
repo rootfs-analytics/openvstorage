@@ -35,20 +35,12 @@ class TestArakoonInstaller(TestCase):
         TestArakoonInstaller.expected_global = '[global]\ncluster_id = {0}\ncluster = {1}\nplugins = \n\n'
         TestArakoonInstaller.expected_base = '[{0}]\nname = {0}\nip = {1}\nclient_port = {2}\nmessaging_port = {3}\ntlog_compression = snappy\nlog_level = info\nlog_dir = /var/log/arakoon/one\nhome = /tmp/db/arakoon/one\ntlog_dir = /tmp/db/tlogs/one\nfsync = true\n\n'
 
-        # SSH client
-        def _load(ip, password=None):
-            _client = SSHClient._load(ip, password)
-            _client._ip = ip
-            return _client
-
-        SSHClient._load = staticmethod(SSHClient.load)
-        SSHClient.load = staticmethod(_load)
-
         # System
         def _get_my_machine_id(_client):
-            return TestArakoonInstaller.nodes[_client._ip]
+            return TestArakoonInstaller.nodes[_client.ip]
 
         def _read_remote_config(_client, _key):
+            _ = _client
             return Configuration.get(_key)
 
         System.get_my_machine_id = staticmethod(_get_my_machine_id)
@@ -82,8 +74,8 @@ class TestArakoonInstaller(TestCase):
     @classmethod
     def setUp(cls):
         for node in TestArakoonInstaller.nodes:
-            SSHClient.load(node).run('rm -rf /tmp/db; mkdir /tmp/db')
-            SSHClient.load(node).run('rm -rf /tmp/cfg; mkdir /tmp/cfg')
+            SSHClient(node).run('rm -rf /tmp/db; mkdir /tmp/db')
+            SSHClient(node).run('rm -rf /tmp/cfg; mkdir /tmp/cfg')
 
     def _get_config_path(self, cluster):
         return '/tmp/cfg/{0}/{0}.cfg'.format(cluster)
@@ -93,7 +85,7 @@ class TestArakoonInstaller(TestCase):
         cluster = 'one'
         node = sorted(TestArakoonInstaller.nodes.keys())[0]
         ArakoonInstaller.create_cluster(cluster, node, [])
-        contents = SSHClient.load(node).file_read(self._get_config_path(cluster))
+        contents = SSHClient(node).file_read(self._get_config_path(cluster))
         expected  = TestArakoonInstaller.expected_global.format(cluster, TestArakoonInstaller.nodes[node])
         expected += TestArakoonInstaller.expected_base.format(TestArakoonInstaller.nodes[node], node, base_port, base_port + 1)
         self.assertEqual(contents.strip(), expected.strip())
@@ -110,7 +102,7 @@ class TestArakoonInstaller(TestCase):
             expected += TestArakoonInstaller.expected_base.format(TestArakoonInstaller.nodes[node], node, base_port, base_port + 1)
         expected = expected.strip()
         for node in nodes:
-            contents = SSHClient.load(node).file_read(self._get_config_path(cluster))
+            contents = SSHClient(node).file_read(self._get_config_path(cluster))
             self.assertEqual(contents.strip(), expected.strip())
         node = nodes[0]
         ArakoonInstaller.shrink_cluster(nodes[1], node, cluster)
@@ -119,7 +111,7 @@ class TestArakoonInstaller(TestCase):
             expected += TestArakoonInstaller.expected_base.format(TestArakoonInstaller.nodes[node], node, base_port, base_port + 1)
         expected = expected.strip()
         for node in nodes[1:]:
-            contents = SSHClient.load(node).file_read(self._get_config_path(cluster))
+            contents = SSHClient(node).file_read(self._get_config_path(cluster))
             self.assertEqual(contents.strip(), expected.strip())
 
 

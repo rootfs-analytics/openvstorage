@@ -140,7 +140,7 @@ class SetupController(object):
                 target_node_password = Interactive.ask_password('Enter the root password for {0}'.format(node_string))
             else:
                 target_node_password = target_password
-            target_client = SSHClient.load(ip, target_node_password)
+            target_client = SSHClient(ip, target_node_password)
             if verbose:
                 logger.debug('Verbose mode')
                 from ovs.plugin.provider.remote import Remote
@@ -358,7 +358,7 @@ class SetupController(object):
         all_ips.update(SetupController.host_ips)
 
         for node in nodes:
-            node_client = SSHClient.load(node, passwords[node])
+            node_client = SSHClient(node, passwords[node])
             root_pub_key = node_client.file_read(public_key_filename.format(root_ssh_folder))
             ovs_pub_key = node_client.file_read(public_key_filename.format(ovs_ssh_folder))
             authorized_keys += '{0}\n{1}\n'.format(root_pub_key, ovs_pub_key)
@@ -367,7 +367,7 @@ class SetupController(object):
             mapping[node] = node_hostname
 
         for node in nodes:
-            node_client = SSHClient.load(node, passwords[node])
+            node_client = SSHClient(node, passwords[node])
             print 'Updating hosts files'
             logger.debug('Updating hosts files')
             for ip in mapping.keys():
@@ -387,7 +387,7 @@ System.update_hosts_file(hostname='{0}', ip='{1}')
         print 'Creating filesystems'
         logger.info('Creating filesystems')
 
-        target_client = SSHClient.load(cluster_ip)
+        target_client = SSHClient(cluster_ip)
         disk_layout = SetupController.apply_flexible_disk_layout(target_client, auto_config, disk_layout)
         mountpoints = disk_layout.keys()
         mountpoints.sort()
@@ -396,7 +396,6 @@ System.update_hosts_file(hostname='{0}', ip='{1}')
         logger.info('Collecting hypervisor information')
 
         # Collecting hypervisor data
-        target_client = SSHClient.load(cluster_ip)
         possible_hypervisor = SetupController._discover_hypervisor(target_client)
         if not hypervisor_info.get('type'):
             hypervisor_info['type'] = Interactive.ask_choice(['VMWARE', 'KVM'],
@@ -443,10 +442,11 @@ System.update_hosts_file(hostname='{0}', ip='{1}')
         print '\n+++ Setting up first node +++\n'
         logger.info('Setting up first node')
 
+        target_client = SSHClient(cluster_ip)
+
         print 'Setting up Arakoon'
         logger.info('Setting up Arakoon')
         # Loading arakoon mountpoint
-        target_client = SSHClient.load(cluster_ip)
         if arakoon_mountpoint is None:
             arakoon_mountpoint = Interactive.ask_choice(mountpoints, question='Select arakoon database mountpoint',
                                                         default_value=Interactive.find_in_list(mountpoints, 'db'))
@@ -458,7 +458,6 @@ System.update_hosts_file(hostname='{0}', ip='{1}')
 
         print 'Setting up elastic search'
         logger.info('Setting up elastic search')
-        target_client = SSHClient.load(cluster_ip)
         SetupController._add_service(target_client, 'elasticsearch')
         config_file = '/etc/elasticsearch/elasticsearch.yml'
         SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
@@ -675,9 +674,11 @@ EOF
         print '\n+++ Adding extra node +++\n'
         logger.info('Adding extra node')
 
+        target_client = SSHClient(cluster_ip)
+        master_client = SSHClient(master_ip)
+
         # Elastic search setup
         print 'Configuring logstash'
-        target_client = SSHClient.load(cluster_ip)
         SetupController._replace_param_in_config(target_client, '/etc/logstash/conf.d/indexer.conf',
                                                  '<CLUSTER_NAME>', 'ovses_{0}'.format(cluster_name))
         SetupController._change_service_state(target_client, 'logstash', 'restart')
@@ -696,16 +697,13 @@ EOF
         for cluster in SetupController.arakoon_clusters:
             ArakoonInstaller.deploy_config(master_ip, cluster_ip, cluster)
         for config in SetupController.generic_configfiles.keys():
-            master_client = SSHClient.load(master_ip)
             client_config = SetupController._remote_config_read(master_client, config)
-            target_client = SSHClient.load(cluster_ip)
             SetupController._remote_config_write(target_client, config, client_config)
 
-        client = SSHClient.load(cluster_ip)
-        node_name = client.run('hostname')
-        client.run('mkdir -p /opt/OpenvStorage/webapps/frontend/logging')
-        SetupController._change_service_state(client, 'logstash', 'restart')
-        SetupController._replace_param_in_config(client,
+        node_name = target_client.run('hostname')
+        target_client.run('mkdir -p /opt/OpenvStorage/webapps/frontend/logging')
+        SetupController._change_service_state(target_client, 'logstash', 'restart')
+        SetupController._replace_param_in_config(target_client,
                                                  '/opt/OpenvStorage/webapps/frontend/logging/config.js',
                                                  'http://"+window.location.hostname+":9200',
                                                  'http://' + cluster_ip + ':9200')
@@ -748,7 +746,6 @@ EOF
         print 'Updating configuration files'
         logger.info('Updating configuration files')
         ovs_config.set('grid', 'ip', cluster_ip)
-        target_client = SSHClient.load(cluster_ip)
         SetupController._remote_config_write(target_client, '/opt/OpenvStorage/config/ovs.cfg', ovs_config)
 
         print 'Starting services'
@@ -758,7 +755,7 @@ EOF
 
         logger.debug('Restarting workers')
         for node in nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             SetupController._enable_service(node_client, 'workers')
             SetupController._change_service_state(node_client, 'workers', 'restart')
 
@@ -767,7 +764,6 @@ EOF
         print '\n+++ Announcing service +++\n'
         logger.info('Announcing service')
 
-        target_client = SSHClient.load(cluster_ip)
         target_client.run("""cat > {3} <<EOF
 <?xml version="1.0" standalone='no'?>
 <!--*-nxml-*-->
@@ -784,7 +780,7 @@ EOF
     """.format(cluster_name, node_name, 'extra', SetupController.avahi_filename, cluster_ip.replace('.', '_')))
         SetupController._change_service_state(target_client, 'avahi-daemon', 'restart')
 
-        target_client.run('chown -R ovs:ovs /opt/OpenvStorage/config', quiet=True)
+        target_client.run('chown -R ovs:ovs /opt/OpenvStorage/config')
         logger.info('Extra node complete')
 
     @staticmethod
@@ -812,8 +808,8 @@ EOF
             cluster_name = match_groups['cluster']
 
             target_password = Interactive.ask_password('Enter the root password for this node')
-            target_client = SSHClient.load('127.0.0.1', target_password)
-            discovery_result = SetupController._discover_nodes(target_client)
+            local_client = SSHClient()
+            discovery_result = SetupController._discover_nodes(local_client)
             master_nodes = [this_node_name for this_node_name, node_properties in discovery_result[cluster_name].iteritems()
                             if node_properties.get('type', None) == 'master']
             nodes = [node_property['ip'] for node_property in discovery_result[cluster_name].values()]
@@ -822,7 +818,7 @@ EOF
             master_ip = discovery_result[cluster_name][master_nodes[0]]['ip']
 
             config_filename = '/opt/OpenvStorage/config/ovs.cfg'
-            ovs_config = SetupController._remote_config_read(target_client, config_filename)
+            ovs_config = SetupController._remote_config_read(local_client, config_filename)
             unique_id = ovs_config.get('core', 'uniqueid')
             ip = ovs_config.get('grid', 'ip')
             nodes.append(ip)  # The client node is never included in the discovery results
@@ -856,7 +852,9 @@ EOF
         print '\n+++ Promoting node +++\n'
         logger.info('Promoting node')
 
-        target_client = SSHClient.load(cluster_ip)
+        target_client = SSHClient(cluster_ip)
+        master_client = SSHClient(master_ip)
+
         node_name = target_client.run('hostname')
 
         storagerouter = StorageRouterList.get_by_machine_id(unique_id)
@@ -875,7 +873,6 @@ EOF
 
         # Elastic search setup
         print 'Configuring elastic search'
-        target_client = SSHClient.load(cluster_ip)
         SetupController._add_service(target_client, 'elasticsearch')
         config_file = '/etc/elasticsearch/elasticsearch.yml'
         SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
@@ -907,7 +904,6 @@ EOF
         print 'Joining arakoon cluster'
         logger.info('Joining arakoon cluster')
         # Loading arakoon mountpoint
-        target_client = SSHClient.load(cluster_ip)
         if arakoon_mountpoint is None:
             if mountpoints:
                 manual = 'Enter custom path'
@@ -934,7 +930,6 @@ EOF
         print 'Distribute configuration files'
         logger.info('Distribute configuration files')
         for config_file, port in SetupController.generic_configfiles.iteritems():
-            master_client = SSHClient.load(master_ip)
             config = SetupController._remote_config_read(master_client, config_file)
             config_nodes = [n.strip() for n in config.get('main', 'nodes').split(',')]
             if unique_id not in config_nodes:
@@ -942,7 +937,7 @@ EOF
                 config.add_section(unique_id)
                 config.set(unique_id, 'location', '{0}:{1}'.format(cluster_ip, port))
             for node in nodes:
-                node_client = SSHClient.load(node)
+                node_client = SSHClient(node)
                 SetupController._remote_config_write(node_client, config_file, config)
 
         print 'Restarting master node services'
@@ -954,7 +949,6 @@ EOF
 
         print 'Setting up RabbitMQ'
         logger.debug('Setting up RMQ')
-        target_client = SSHClient.load(cluster_ip)
         target_client.run("""cat > /etc/rabbitmq/rabbitmq.config << EOF
 [
    {{rabbit, [{{tcp_listeners, [{0}]}},
@@ -987,11 +981,9 @@ EOF
         # Copy rabbitmq cookie
         logger.debug('Copying RMQ cookie')
         rabbitmq_cookie_file = '/var/lib/rabbitmq/.erlang.cookie'
-        master_client = SSHClient.load(master_ip)
         contents = master_client.file_read(rabbitmq_cookie_file)
         master_hostname = master_client.run('hostname')
-        target_client = SSHClient.load(cluster_ip)
-        target_client.dir_ensure(os.path.dirname(rabbitmq_cookie_file), True)
+        target_client.dir_ensure(os.path.dirname(rabbitmq_cookie_file))
         target_client.file_write(rabbitmq_cookie_file, contents)
         target_client.file_attribs(rabbitmq_cookie_file, mode=400)
         target_client.run('rabbitmq-server -detached; sleep 5; rabbitmqctl stop_app; sleep 5;')
@@ -1000,15 +992,15 @@ EOF
 
         # Enable HA for the rabbitMQ queues
         SetupController._change_service_state(target_client, 'rabbitmq', 'start')
-        output = target_client.run('sleep 5;rabbitmqctl set_policy ha-all "^(volumerouter|ovs_.*)$" \'{"ha-mode":"all"}\'', quiet=True).split('\r\n')
+        output = target_client.run('sleep 5;rabbitmqctl set_policy ha-all "^(volumerouter|ovs_.*)$" \'{"ha-mode":"all"}\'').split('\r\n')
         retry = False
         for line in output:
             if 'Error: unable to connect to node ' in line:
                 rabbitmq_running, rabbitmq_pid = SetupController._is_rabbitmq_running(target_client)
                 if rabbitmq_running and rabbitmq_pid:
-                    target_client.run('kill {0}'.format(rabbitmq_pid), quiet=True)
+                    target_client.run('kill {0}'.format(rabbitmq_pid))
                     print('  Process killed, restarting')
-                    target_client.run('service ovs-rabbitmq start', quiet=True)
+                    target_client.run('service ovs-rabbitmq start')
                     retry = True
                     break
         if retry:
@@ -1020,22 +1012,22 @@ EOF
         elif rabbitmq_running and not ovs_rabbitmq_running:
             # Wrong process is running, must be stopped and correct one started
             print('  WARNING: an instance of rabbitmq-server is running, this needs to be stopped, ovs-rabbitmq will be started instead')
-            target_client.run('service rabbitmq-server stop', quiet=True)
+            target_client.run('service rabbitmq-server stop')
             time.sleep(5)
             try:
-                target_client.run('kill {0}'.format(rabbitmq_pid), quiet=True)
+                target_client.run('kill {0}'.format(rabbitmq_pid))
                 print('  Process killed')
             except SystemExit:
                 print('  Process already stopped')
-            target_client.run('service ovs-rabbitmq start', quiet=True)
+            target_client.run('service ovs-rabbitmq start')
         elif not rabbitmq_running and not ovs_rabbitmq_running:
             # Neither running
-            target_client.run('service ovs-rabbitmq start', quiet=True)
+            target_client.run('service ovs-rabbitmq start')
 
         print 'Update existing vPools'
         logger.info('Update existing vPools')
         for node in nodes:
-            client_node = SSHClient.load(node)
+            client_node = SSHClient(node)
             update_voldrv = """
 import os
 from ovs.plugin.provider.configuration import Configuration
@@ -1059,11 +1051,10 @@ for json_file in os.listdir(configuration_dir):
             SetupController._exec_python(client_node, update_voldrv)
 
         for node in nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             SetupController._configure_amqp_to_volumedriver(node_client)
 
         print 'Starting services'
-        target_client = SSHClient.load(cluster_ip)
         logger.info('Update ES configuration')
         SetupController._update_es_configuration(target_client, 'true')
         logger.info('Starting services')
@@ -1075,19 +1066,18 @@ for json_file in os.listdir(configuration_dir):
         print 'Retarting services'
         SetupController._change_service_state(target_client, 'watcher-volumedriver', 'restart')
         for node in nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         if SetupController._run_promote_hooks(cluster_ip, master_ip):
             print 'Retarting services'
             for node in nodes:
-                node_client = SSHClient.load(node)
+                node_client = SSHClient(node)
                 SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         print '\n+++ Announcing service +++\n'
         logger.info('Announcing service')
 
-        target_client = SSHClient.load(cluster_ip)
         target_client.run("""cat > {3} <<EOF
 <?xml version="1.0" standalone='no'?>
 <!--*-nxml-*-->
@@ -1104,7 +1094,7 @@ EOF
 """.format(cluster_name, node_name, 'master', SetupController.avahi_filename, cluster_ip.replace('.', '_')))
         SetupController._change_service_state(target_client, 'avahi-daemon', 'restart')
 
-        target_client.run('chown -R ovs:ovs /opt/OpenvStorage/config', quiet=True)
+        target_client.run('chown -R ovs:ovs /opt/OpenvStorage/config')
 
         logger.info('Promote complete')
 
@@ -1133,8 +1123,8 @@ EOF
             cluster_name = match_groups['cluster']
 
             target_password = Interactive.ask_password('Enter the root password for this node')
-            target_client = SSHClient.load('127.0.0.1', target_password)
-            discovery_result = SetupController._discover_nodes(target_client)
+            local_client = SSHClient()
+            discovery_result = SetupController._discover_nodes(local_client)
             master_nodes = [this_node_name for this_node_name, node_properties in
                             discovery_result[cluster_name].iteritems()
                             if node_properties.get('type', None) == 'master']
@@ -1144,7 +1134,7 @@ EOF
             master_ip = discovery_result[cluster_name][master_nodes[0]]['ip']
 
             config_filename = '/opt/OpenvStorage/config/ovs.cfg'
-            ovs_config = SetupController._remote_config_read(target_client, config_filename)
+            ovs_config = SetupController._remote_config_read(local_client, config_filename)
             unique_id = ovs_config.get('core', 'uniqueid')
             ip = ovs_config.get('grid', 'ip')
             nodes.append(ip)  # The client node is never included in the discovery results
@@ -1178,7 +1168,8 @@ EOF
         print '\n+++ Demoting node +++\n'
         logger.info('Demoting node')
 
-        target_client = SSHClient.load(cluster_ip)
+        target_client = SSHClient(cluster_ip)
+        master_client = SSHClient(master_ip)
         node_name = target_client.run('hostname')
 
         storagerouter = StorageRouterList.get_by_machine_id(unique_id)
@@ -1198,7 +1189,6 @@ EOF
 
         # Elastic search setup
         print 'Unconfiguring elastic search'
-        target_client = SSHClient.load(cluster_ip)
         if SetupController._has_service(target_client, 'elasticsearch'):
             SetupController._change_service_state(target_client, 'elasticsearch', 'stop')
             target_client.run('rm -f /etc/elasticsearch/elasticsearch.yml')
@@ -1216,7 +1206,7 @@ EOF
         print 'Update existing vPools'
         logger.info('Update existing vPools')
         for node in nodes:
-            client_node = SSHClient.load(node)
+            client_node = SSHClient(node)
             update_voldrv = """
 import os
 from ovs.plugin.provider.configuration import Configuration
@@ -1240,13 +1230,12 @@ for json_file in os.listdir(configuration_dir):
             SetupController._exec_python(client_node, update_voldrv)
 
         for node in nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             SetupController._configure_amqp_to_volumedriver(node_client)
 
         print 'Distribute configuration files'
         logger.info('Distribute configuration files')
         for config_file, port in SetupController.generic_configfiles.iteritems():
-            master_client = SSHClient.load(master_ip)
             config = SetupController._remote_config_read(master_client, config_file)
             config_nodes = [n.strip() for n in config.get('main', 'nodes').split(',')]
             if unique_id in config_nodes:
@@ -1254,7 +1243,7 @@ for json_file in os.listdir(configuration_dir):
                 config.set('main', 'nodes', ', '.join(config_nodes))
                 config.remove_section(unique_id)
             for node in nodes:
-                node_client = SSHClient.load(node)
+                node_client = SSHClient(node)
                 SetupController._remote_config_write(node_client, config_file, config)
 
         print 'Restarting master node services'
@@ -1269,7 +1258,6 @@ for json_file in os.listdir(configuration_dir):
 
         print 'Removing/unconfiguring RabbitMQ'
         logger.debug('Removing/unconfiguring RabbitMQ')
-        target_client = SSHClient.load(cluster_ip)
         if SetupController._has_service(target_client, 'rabbitmq'):
             target_client.run('rabbitmq-server -detached; sleep 5; rabbitmqctl stop_app; sleep 5;')
             target_client.run('rabbitmqctl reset; sleep 5;')
@@ -1295,26 +1283,24 @@ for json_file in os.listdir(configuration_dir):
         print 'Restarting services'
         logger.debug('Restarting services')
         for node in master_nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             for service in [s for s in SetupController.master_node_services if s not in SetupController.master_services]:
                 SetupController._change_service_state(node_client, service, 'restart')
-        target_client = SSHClient.load(cluster_ip)
 
         SetupController._change_service_state(target_client, 'watcher-volumedriver', 'restart')
         for node in nodes:
-            node_client = SSHClient.load(node)
+            node_client = SSHClient(node)
             SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         if SetupController._run_demote_hooks(cluster_ip, master_ip):
             print 'Retarting services'
             for node in nodes:
-                node_client = SSHClient.load(node)
+                node_client = SSHClient(node)
                 SetupController._change_service_state(node_client, 'watcher-framework', 'restart')
 
         print '\n+++ Announcing service +++\n'
         logger.info('Announcing service')
 
-        target_client = SSHClient.load(cluster_ip)
         target_client.run("""cat > {3} <<EOF
 <?xml version="1.0" standalone='no'?>
 <!--*-nxml-*-->

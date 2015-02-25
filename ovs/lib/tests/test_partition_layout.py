@@ -1155,7 +1155,7 @@ class PartitionLayout(unittest.TestCase):
         global client
         global sc
 
-        client = SSHClient.load('127.0.0.1', 'rooter')
+        client = SSHClient()
         sc = SetupController()
 
     @classmethod
@@ -1310,7 +1310,7 @@ class PartitionLayout(unittest.TestCase):
         child.sendline("from ovs.extensions.generic.sshclient import SSHClient")
         child.expect(":")
 
-        child.sendline("client = SSHClient.load('127.0.0.1', 'rooter')")
+        child.sendline("client = SSHClient()")
         child.expect(":")
 
         child.sendline("sc = SetupController()")

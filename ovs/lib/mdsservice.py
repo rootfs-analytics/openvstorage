@@ -466,7 +466,7 @@ Service.start_service('{0}')
                         has_room = True
                         break
                 if has_room is False:
-                    client = SSHClient.load(storagerouter.ip)
+                    client = SSHClient(storagerouter.ip)
                     mds_service = MDSServiceController.prepare_mds_service(client, storagerouter, vpool,
                                                                            fresh_only=False, start=True)
                     if mds_service is None:
@@ -474,7 +474,7 @@ Service.start_service('{0}')
                     mds_dict[vpool][storagerouter].append(mds_service)
             mds_config_set = MDSServiceController.get_mds_storagedriver_config_set(vpool)
             for storagerouter in mds_dict[vpool]:
-                client = SSHClient.load(storagerouter.ip)
+                client = SSHClient(storagerouter.ip)
                 storagedriver_config = StorageDriverConfiguration('storagedriver', vpool.name)
                 storagedriver_config.load(client)
                 if storagedriver_config.is_new is False:
