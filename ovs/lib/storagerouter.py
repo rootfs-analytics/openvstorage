@@ -959,7 +959,9 @@ if not Service.has_service('{0}'):
     Service.add_service('', '{0}', '', '', {1})
     Service.enable_service('{0}')
 if not Service.get_service_status('{0}'):
-    Service.start_service('{0}')"""
+    Service.start_service('{0}')
+else:
+    Service.restart_service('{0}')"""
                 System.exec_remote_python(client, script.format('support-agent', {}))
             else:
                 script = """
