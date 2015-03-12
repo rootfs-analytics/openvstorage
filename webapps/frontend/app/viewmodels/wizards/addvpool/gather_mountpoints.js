@@ -21,7 +21,8 @@ define([
         var self = this;
 
         // Variables
-        self.data = data;
+        self.data            = data;
+        self.mountpointRegex = /^(\/[a-zA-Z0-9\-_ \.]+)+\/?$/;
 
         // Computed
         self.canContinue = ko.computed(function() {
@@ -130,21 +131,20 @@ define([
                 fields.push('vpool');
                 reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.vpoolnotallowed'));
             }
-            if (!self.data.mtptReadCache1.valid()) {
-                valid = false;
-                fields.push('readcache1');
-                reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.invalidmtpt', { what: $.t('ovs:generic.cachefs') }));
-            }
-            if (!self.data.mtptReadCache2.valid()) {
-                valid = false;
-                fields.push('readcache2');
-                reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.invalidmtpt', { what: $.t('ovs:generic.cachefs') }));
-            }
-            if (!self.data.mtptWriteCache.valid()) {
-                valid = false;
-                fields.push('writecache');
-                reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.invalidmtpt', { what: $.t('ovs:generic.cachefs') }));
-            }
+            $.each(self.data.mtptReadCaches(), function(index, cache) {
+                if ($.inArray('readcache', fields) === -1 && cache.match(self.mountpointRegex) === null) {
+                    valid = false;
+                    fields.push('readcache');
+                    reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.invalidmtpt', { what: $.t('ovs:generic.cachefs') }));
+                }
+            });
+            $.each(self.data.mtptWriteCaches(), function(index, cache) {
+                if ($.inArray('writecache', fields) === -1 && cache.match(self.mountpointRegex) === null) {
+                    valid = false;
+                    fields.push('writecache');
+                    reasons.push($.t('ovs:wizards.addvpool.gathermountpoints.invalidmtpt', { what: $.t('ovs:generic.cachefs') }));
+                }
+            });
             if (!self.data.mtptFOC.valid()) {
                 valid = false;
                 fields.push('foc');
@@ -167,5 +167,26 @@ define([
             }
             return { value: valid, reasons: reasons, fields: fields };
         });
+
+        self.addReadCache = function() {
+            var value = self.data.mtptCustomRC();
+            if (value !== undefined && value !== '') {
+                if ($.inArray(value, self.data.mtptCustomRCs()) === -1 && $.inArray(value, self.data.mountpoints()) === -1) {
+                    self.data.mtptCustomRCs.push(value);
+                    self.data.mtptReadCaches.push(value);
+                }
+                self.data.mtptCustomRC('');
+            }
+        };
+        self.addWriteCache = function() {
+            var value = self.data.mtptCustomWC();
+            if (value !== undefined && value !== '') {
+                if ($.inArray(value, self.data.mtptCustomWCs()) === -1 && $.inArray(value, self.data.mountpoints()) === -1) {
+                    self.data.mtptCustomWCs.push(value);
+                    self.data.mtptWriteCaches.push(value);
+                }
+                self.data.mtptCustomWC('');
+            }
+        };
     };
 });
